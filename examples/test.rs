@@ -1,5 +1,5 @@
 use std::error::Error;
-use steam_vent::proto::steammessages_gameservers_steamclient::CGameServers_GetServerList_Request;
+use steam_vent_proto::steammessages_gameservers_steamclient::CGameServers_GetServerList_Request;
 use steam_vent::{Connection, ConnectionTrait, ServerList};
 
 #[tokio::main]

@@ -1788,6 +1788,8 @@ dependencies = [
  "serde_json",
  "steam-vent-crypto",
  "steam-vent-proto",
+ "steam-vent-proto-common",
+ "steam-vent-proto-steam",
  "steamid-ng",
  "thiserror 2.0.17",
  "tokio",
@@ -1822,10 +1824,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8769088654e0d57a1029cc2da4f8f0a3202e9b83fadebb2e623adde206ff215d"
 dependencies = [
  "steam-vent-proto-common",
- "steam-vent-proto-csgo",
- "steam-vent-proto-dota2",
  "steam-vent-proto-steam",
- "steam-vent-proto-tf2",
 ]
 
 [[package]]
@@ -1838,37 +1837,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "steam-vent-proto-csgo"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc9a1e885f80157ea5f6f8bdc3f0ac80b0782efd2d11306257515710fbcad203"
-dependencies = [
- "steam-vent-proto-common",
-]
-
-[[package]]
-name = "steam-vent-proto-dota2"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42fcc961de3a221252996edf1ebc651bfcc5503a0bcb79d960beedfd291994ed"
-dependencies = [
- "steam-vent-proto-common",
-]
-
-[[package]]
 name = "steam-vent-proto-steam"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69b590586d9c9c002f36e7e65d14caaed2301249a7e1badae776a8349ed4a8ce"
-dependencies = [
- "steam-vent-proto-common",
-]
-
-[[package]]
-name = "steam-vent-proto-tf2"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f899f4ef4a8d021c382986601787d51efadfff5367b0be63099b1db1b8ff9d51"
 dependencies = [
  "steam-vent-proto-common",
 ]

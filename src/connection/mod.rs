@@ -20,7 +20,7 @@ use std::future::Future;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use steam_vent_proto::{GCHandshake, JobMultiple, MsgKindEnum};
+use steam_vent_proto_common::{GCHandshake, JobMultiple, MsgKindEnum};
 use steamid_ng::SteamID;
 use tokio::sync::Mutex;
 use tokio::time::timeout;

@@ -15,7 +15,7 @@ use futures_util::{FutureExt, Sink};
 use serde::Deserialize;
 use std::future::Future;
 use std::pin::pin;
-use steam_vent_proto::enums_clientserver::EMsg;
+use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steamid_ng::{AccountType, SteamID};
 use thiserror::Error;
 use tokio::time::timeout;
