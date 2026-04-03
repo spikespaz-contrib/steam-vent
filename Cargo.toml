@@ -6,7 +6,7 @@ edition = "2024"
 description = "Interact with the Steam network via rust"
 license = "MIT"
 repository = "https://codeberg.org/steam-vent/steam-vent"
-rust-version = "1.85.0"
+rust-version = "1.88.0"
 
 [dependencies]
 steam-vent-proto = "0.5.2"
