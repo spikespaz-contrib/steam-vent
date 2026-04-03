@@ -49,8 +49,8 @@ changes.
 ```rust
 use std::error::Error;
 use steam_vent::connection::Connection;
-use steam_vent::proto::steammessages_gameservers_steamclient::CGameServers_GetServerList_Request;
 use steam_vent::serverlist::ServerList;
+use steam_vent_proto::steammessages_gameservers_steamclient::CGameServers_GetServerList_Request;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -82,8 +82,8 @@ Game-specific probufs are packaged for the following games:
 - [csgo](https://codeberg.org/steam-vent/proto-csgo)
 - [dota2](https://codeberg.org/steam-vent/proto-dota2)
 
-They can be used by either enabling the features in this crate or by depending
-on the protobuf package directly.
+They can be used by either enabling the features in `steam-vent-proto` or by
+depending on the protobuf package directly.
 
 ## Credit
 
