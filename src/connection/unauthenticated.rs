@@ -137,10 +137,10 @@ impl UnAuthenticatedConnection {
             Either::Right((tokens, _)) => tokens?,
         };
 
-        if let Some(guard_data) = tokens.new_guard_data {
-            if let Err(e) = guard_data_store.store(account, guard_data).await {
-                error!(error = ?e, "failed to store guard data");
-            }
+        if let Some(guard_data) = tokens.new_guard_data
+            && let Err(e) = guard_data_store.store(account, guard_data).await
+        {
+            error!(error = ?e, "failed to store guard data");
         }
 
         raw.session = login(
