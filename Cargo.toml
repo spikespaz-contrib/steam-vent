@@ -25,7 +25,7 @@ bytemuck = { version = "1.23.2", features = ["derive"] }
 crc = "3.3.0"
 byteorder = "1.5.0"
 flate2 = "1.1.2"
-steamid-ng = "2.0.0"
+steamid-ng = "3.0.0"
 futures-util = { version = "0.3.31", features = ["sink"] }
 dashmap = "6.1.0"
 tracing = "0.1.41"

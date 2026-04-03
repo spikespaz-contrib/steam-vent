@@ -129,7 +129,7 @@ impl Default for Session {
             public_ip: None,
             ip_country_code: None,
             job_id: JobIdCounter::default(),
-            steam_id: SteamID::default(),
+            steam_id: crate::net::steam_id_nil(),
             heartbeat_interval: Duration::from_secs(15),
             app_id: None,
             access_token: None,
@@ -239,7 +239,17 @@ async fn send_logon(
     let raw_response = fut.await.map_err(|_| NetworkError::EOF)?;
     let (header, response) = raw_response.into_header_and_message::<CMsgClientLogonResponse>()?;
     EResult::from_result(response.eresult()).map_err(LoginError::from)?;
-    debug!(steam_id = u64::from(steam_id), "session started");
+
+    let assigned_steam_id = if response.has_client_supplied_steamid() {
+        let raw = response.client_supplied_steamid();
+        SteamID::try_from(raw).unwrap_or(steam_id)
+    } else if header.steam_id != crate::net::steam_id_nil() {
+        header.steam_id
+    } else {
+        steam_id
+    };
+
+    debug!(steam_id = %u64::from(assigned_steam_id), "session started");
     Ok(Session {
         session_id: header.session_id,
         cell_id: response.cell_id(),
@@ -253,7 +263,7 @@ async fn send_logon(
             _ => None,
         }),
         ip_country_code: response.ip_country_code.clone(),
-        steam_id: header.steam_id,
+        steam_id: assigned_steam_id,
         job_id: JobIdCounter::default(),
         heartbeat_interval: Duration::from_secs(response.heartbeat_seconds() as u64),
         app_id: None,
@@ -272,7 +282,7 @@ pub async fn hello<C: ConnectionImpl>(conn: &mut C) -> std::result::Result<(), N
         session_id: 0,
         source_job_id: JobId::NONE,
         target_job_id: JobId::NONE,
-        steam_id: SteamID::default(),
+        steam_id: crate::net::steam_id_nil(),
         ..NetMessageHeader::default()
     };
 

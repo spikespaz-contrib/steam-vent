@@ -67,7 +67,11 @@ impl JobId {
     pub const NONE: JobId = JobId(u64::MAX);
 }
 
-#[derive(Debug, Default, Clone)]
+pub(crate) fn steam_id_nil() -> SteamID {
+    SteamID::try_from(0u64).unwrap()
+}
+
+#[derive(Debug, Clone)]
 pub struct NetMessageHeader {
     pub source_job_id: JobId,
     pub target_job_id: JobId,
@@ -78,12 +82,26 @@ pub struct NetMessageHeader {
     pub source_app_id: Option<u32>,
 }
 
+impl Default for NetMessageHeader {
+    fn default() -> Self {
+        Self {
+            source_job_id: JobId::default(),
+            target_job_id: JobId::default(),
+            steam_id: steam_id_nil(),
+            session_id: 0,
+            target_job_name: None,
+            result: None,
+            source_app_id: None,
+        }
+    }
+}
+
 impl From<CMsgProtoBufHeader> for NetMessageHeader {
     fn from(header: CMsgProtoBufHeader) -> Self {
         NetMessageHeader {
             source_job_id: JobId(header.jobid_source()),
             target_job_id: JobId(header.jobid_target()),
-            steam_id: header.steamid().try_into().unwrap_or_default(),
+            steam_id: header.steamid().try_into().unwrap_or(steam_id_nil()),
             session_id: header.client_sessionid(),
             target_job_name: header
                 .has_target_job_name()
@@ -123,7 +141,7 @@ impl NetMessageHeader {
                     target_job_id: JobId(target_job_id),
                     source_job_id: JobId(source_job_id),
                     session_id: 0,
-                    steam_id: SteamID::default(),
+                    steam_id: steam_id_nil(),
                     ..NetMessageHeader::default()
                 },
                 4 + 8 + 8,
@@ -136,7 +154,7 @@ impl NetMessageHeader {
             let steam_id = reader
                 .read_u64::<LittleEndian>()?
                 .try_into()
-                .unwrap_or_default();
+                .unwrap_or(steam_id_nil());
             let session_id = reader.read_i32::<LittleEndian>()?;
             Ok((
                 NetMessageHeader {
@@ -189,7 +207,7 @@ impl NetMessageHeader {
         if self.target_job_id != JobId::NONE {
             proto_header.set_jobid_target(self.target_job_id.0);
         }
-        if self.steam_id != SteamID::default() {
+        if self.steam_id != steam_id_nil() {
             proto_header.set_steamid(
                 if kind == EMsg::k_EMsgServiceMethodCallFromClientNonAuthed {
                     0
