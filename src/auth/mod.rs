@@ -6,9 +6,9 @@ use crate::connection::unauthenticated::service_method_un_authenticated;
 use crate::message::NetMessage;
 use crate::message::{MalformedBody, ServiceMethodMessage};
 use crate::net::NetworkError;
-use crate::proto::enums::ESessionPersistence;
-use crate::proto::steammessages_auth_steamclient::CAuthentication_GetPasswordRSAPublicKey_Request;
-use crate::proto::steammessages_auth_steamclient::{
+use steam_vent_proto_steam::enums::ESessionPersistence;
+use steam_vent_proto_steam::steammessages_auth_steamclient::CAuthentication_GetPasswordRSAPublicKey_Request;
+use steam_vent_proto_steam::steammessages_auth_steamclient::{
     CAuthentication_AllowedConfirmation, CAuthentication_BeginAuthSessionViaCredentials_Request,
     CAuthentication_BeginAuthSessionViaCredentials_Response, CAuthentication_DeviceDetails,
     CAuthentication_PollAuthSessionStatus_Request, CAuthentication_PollAuthSessionStatus_Response,

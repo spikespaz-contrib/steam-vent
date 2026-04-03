@@ -1,7 +1,7 @@
 use protobuf::Message;
 use std::fmt::Debug;
 use std::io::{Read, Write};
-use steam_vent_proto::{RpcMessage, RpcMethod};
+use steam_vent_proto_common::{RpcMessage, RpcMethod};
 
 pub trait ServiceMethodRequest: Debug + Message {
     const REQ_NAME: &'static str;

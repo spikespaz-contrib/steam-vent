@@ -4,8 +4,8 @@ use crate::connection::unauthenticated::AccessTokenError;
 use crate::connection::{ConnectionImpl, ConnectionTrait};
 use crate::eresult::EResult;
 use crate::net::{JobId, NetMessageHeader, NetworkError};
-use crate::proto::steammessages_base::CMsgIPAddress;
-use crate::proto::steammessages_clientserver_login::{
+use steam_vent_proto_steam::steammessages_base::CMsgIPAddress;
+use steam_vent_proto_steam::steammessages_clientserver_login::{
     CMsgClientHello, CMsgClientLogon, CMsgClientLogonResponse,
 };
 use crate::NetMessage;
@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use steam_vent_crypto::CryptError;
-use steam_vent_proto::steammessages_base::cmsg_ipaddress;
+use steam_vent_proto_steam::steammessages_base::cmsg_ipaddress;
 use steamid_ng::{
     AccountType, Instance, InstanceFlags, InstanceType, SteamID, SteamIDParseError, Universe,
 };

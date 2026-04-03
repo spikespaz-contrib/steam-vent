@@ -9,8 +9,6 @@ mod service_method;
 mod session;
 mod transport;
 
-pub use steam_vent_proto as proto;
-
 pub use connection::{Connection, ConnectionTrait, ReadonlyConnection};
 pub use eresult::EResult;
 pub use game_coordinator::{GameCoordinator, handshake::GenericGCHandshake};

@@ -4,7 +4,7 @@ use steam_vent::auth::{
     AuthConfirmationHandler, ConsoleAuthConfirmationHandler, DeviceConfirmationHandler,
     FileGuardDataStore, SharedSecretAuthConfirmationHandler,
 };
-use steam_vent::proto::steammessages_player_steamclient::CPlayer_GetOwnedGames_Request;
+use steam_vent_proto::steammessages_player_steamclient::CPlayer_GetOwnedGames_Request;
 use steam_vent::{Connection, ConnectionTrait, ServerList};
 
 #[tokio::main]
