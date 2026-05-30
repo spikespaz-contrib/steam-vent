@@ -1,9 +1,9 @@
 use crate::message::{
-    flatten_multi, ChannelEncryptRequest, ChannelEncryptResult, ClientEncryptResponse, NetMessage,
+    ChannelEncryptRequest, ChannelEncryptResult, ClientEncryptResponse, NetMessage, flatten_multi,
 };
 use crate::net::{NetMessageHeader, NetworkError, RawNetMessage};
 use crate::transport::assert_can_unsplit;
-use bytemuck::{cast, Pod, Zeroable};
+use bytemuck::{Pod, Zeroable, cast};
 use bytes::{Buf, BufMut, BytesMut};
 use futures_util::future::ready;
 use futures_util::{Sink, SinkExt, StreamExt, TryStreamExt};

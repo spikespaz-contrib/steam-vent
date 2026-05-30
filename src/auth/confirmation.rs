@@ -1,12 +1,12 @@
 use crate::auth::SteamGuardToken;
 use another_steam_totp::generate_auth_code;
-use futures_util::future::{select, Either};
+use futures_util::future::{Either, select};
 use std::pin::pin;
 use steam_vent_proto_steam::steammessages_auth_steamclient::{
     CAuthentication_AllowedConfirmation, EAuthSessionGuardType,
 };
 use tokio::io::AsyncBufReadExt;
-use tokio::io::{stdin, stdout, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, Stdin, Stdout};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, Stdin, Stdout, stdin, stdout};
 
 /// A method that can be used to confirm a login
 #[derive(Debug, Clone)]
@@ -149,7 +149,7 @@ pub trait AuthConfirmationHandler: Sized {
     /// If the confirmation handler does not support any of the allowed confirmations it returns `None`.
     /// If no confirmation handler supports the allowed confirmations the login will fail.
     fn handle_confirmation(
-        self,
+        &mut self,
         allowed_confirmations: &[ConfirmationMethod],
     ) -> impl std::future::Future<Output = Option<ConfirmationAction>> + Send;
 
@@ -205,7 +205,7 @@ where
     Write: AsyncWrite + Unpin + Send + Sync,
 {
     async fn handle_confirmation(
-        mut self,
+        &mut self,
         allowed_confirmations: &[ConfirmationMethod],
     ) -> Option<ConfirmationAction> {
         for method in allowed_confirmations {
@@ -252,12 +252,12 @@ impl SharedSecretAuthConfirmationHandler {
 
 impl AuthConfirmationHandler for SharedSecretAuthConfirmationHandler {
     async fn handle_confirmation(
-        self,
+        &mut self,
         allowed_confirmations: &[ConfirmationMethod],
     ) -> Option<ConfirmationAction> {
         for method in allowed_confirmations {
             if let Some(token_type) = method.token_type() {
-                let auth_code = generate_auth_code(self.shared_secret, None)
+                let auth_code = generate_auth_code(&self.shared_secret, None)
                     .expect("Could not generate auth code given shared secret.");
                 let token = SteamGuardToken(auth_code);
                 return Some(ConfirmationAction::GuardToken(token, token_type));
@@ -273,7 +273,7 @@ pub struct DeviceConfirmationHandler;
 
 impl AuthConfirmationHandler for DeviceConfirmationHandler {
     async fn handle_confirmation(
-        self,
+        &mut self,
         allowed_confirmations: &[ConfirmationMethod],
     ) -> Option<ConfirmationAction> {
         for method in allowed_confirmations {
@@ -306,7 +306,7 @@ where
     Right: AuthConfirmationHandler + Send + Sync,
 {
     async fn handle_confirmation(
-        self,
+        &mut self,
         allowed_confirmations: &[ConfirmationMethod],
     ) -> Option<ConfirmationAction> {
         match select(

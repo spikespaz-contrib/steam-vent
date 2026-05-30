@@ -1,14 +1,14 @@
-use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use futures_util::StreamExt;
 use std::env::args;
 use std::error::Error;
+use steam_vent::ServerList;
 use steam_vent::auth::{
     AuthConfirmationHandler, ConsoleAuthConfirmationHandler, DeviceConfirmationHandler,
     FileGuardDataStore,
 };
 use steam_vent::connection::{ReadonlyConnection, UnAuthenticatedConnection};
-use steam_vent::ServerList;
 use steam_vent_proto::steammessages_clientserver::CMsgClientGameConnectTokens;
 
 #[tokio::main]
