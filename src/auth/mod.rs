@@ -186,6 +186,17 @@ impl PendingAuth {
                     new_guard_data: response.new_guard_data,
                 });
             }
+            // Pace this loop at the poll interval. `poll_until_info` returns as
+            // soon as *any* status field is populated — including
+            // `had_remote_interaction`, which is sticky once the user has acted
+            // (e.g. submitted a Steam Guard code). When the session is not yet
+            // approved (a pending confirmation, or a rejected guard code), the
+            // access token never arrives, so without this sleep the loop would
+            // re-issue `PollAuthSessionStatus` at the network round-trip rate
+            // rather than the interval Steam asks for, risking auth
+            // rate-limiting. A successful login returns the token on the first
+            // poll and never reaches here.
+            sleep(Duration::from_secs_f32(self.interval)).await;
         }
     }
 }
