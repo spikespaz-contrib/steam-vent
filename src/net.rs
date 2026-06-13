@@ -1,16 +1,16 @@
 use crate::eresult::EResult;
-use crate::message::{EncodableMessage, MalformedBody, NetMessage};
+use crate::message::MalformedBody;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use protobuf::Message;
-use std::borrow::Cow;
 use std::fmt::Debug;
+use std::io::Error as IoError;
 use std::io::{Cursor, Seek, SeekFrom};
+use steam_vent_common::{EncodableMessage, JobId, NetMessage, NetMessageHeader, RawSteamId};
 use steam_vent_crypto::CryptError;
 use steam_vent_proto_common::{MsgKind, MsgKindEnum};
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steam_vent_proto_steam::steammessages_base::CMsgProtoBufHeader;
-use steamid_ng::SteamID;
 use thiserror::Error;
 use tracing::{debug, trace};
 
@@ -20,7 +20,7 @@ pub const PROTO_MASK: u32 = 0x80000000;
 #[non_exhaustive]
 pub enum NetworkError {
     #[error("{0}")]
-    IO(#[from] std::io::Error),
+    IO(#[from] IoError),
     #[error("{0}")]
     Ws(#[from] tokio_tungstenite::tungstenite::Error),
     #[error("Invalid message header")]
@@ -53,193 +53,147 @@ impl From<EResult> for NetworkError {
 
 pub type Result<T, E = NetworkError> = std::result::Result<T, E>;
 
-/// A unique (per-session) identifier that links request-response pairs
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct JobId(pub(crate) u64);
-
-impl Default for JobId {
-    fn default() -> Self {
-        JobId::NONE
+fn parse_proto_header(header: CMsgProtoBufHeader) -> NetMessageHeader {
+    NetMessageHeader {
+        source_job_id: JobId::new(header.jobid_source()),
+        target_job_id: JobId::new(header.jobid_target()),
+        steam_id: RawSteamId::new(header.steamid()),
+        session_id: header.client_sessionid(),
+        target_job_name: header
+            .has_target_job_name()
+            .then(|| header.target_job_name().to_string().into()),
+        result: header.eresult,
+        source_app_id: header.routing_appid,
     }
 }
 
-impl JobId {
-    pub const NONE: JobId = JobId(u64::MAX);
-}
-
-pub(crate) fn steam_id_nil() -> SteamID {
-    SteamID::try_from(0u64).unwrap()
-}
-
-#[derive(Debug, Clone)]
-pub struct NetMessageHeader {
-    pub source_job_id: JobId,
-    pub target_job_id: JobId,
-    pub steam_id: SteamID,
-    pub session_id: i32,
-    pub target_job_name: Option<Cow<'static, str>>,
-    pub result: Option<i32>,
-    pub source_app_id: Option<u32>,
-}
-
-impl Default for NetMessageHeader {
-    fn default() -> Self {
-        Self {
-            source_job_id: JobId::default(),
-            target_job_id: JobId::default(),
-            steam_id: steam_id_nil(),
-            session_id: 0,
-            target_job_name: None,
-            result: None,
-            source_app_id: None,
-        }
+fn proto_header(header: &NetMessageHeader, kind: MsgKind) -> CMsgProtoBufHeader {
+    let mut proto_header = CMsgProtoBufHeader::new();
+    if header.source_job_id != JobId::NONE {
+        proto_header.set_jobid_source(header.source_job_id.id());
     }
-}
-
-impl From<CMsgProtoBufHeader> for NetMessageHeader {
-    fn from(header: CMsgProtoBufHeader) -> Self {
-        NetMessageHeader {
-            source_job_id: JobId(header.jobid_source()),
-            target_job_id: JobId(header.jobid_target()),
-            steam_id: header.steamid().try_into().unwrap_or(steam_id_nil()),
-            session_id: header.client_sessionid(),
-            target_job_name: header
-                .has_target_job_name()
-                .then(|| header.target_job_name().to_string().into()),
-            result: header.eresult,
-            source_app_id: header.routing_appid,
-        }
+    if header.target_job_id != JobId::NONE {
+        proto_header.set_jobid_target(header.target_job_id.id());
     }
-}
-
-impl NetMessageHeader {
-    fn read<R: ReadBytesExt + Seek>(
-        mut reader: R,
-        kind: MsgKind,
-        is_protobuf: bool,
-    ) -> Result<(Self, usize)> {
-        if is_protobuf {
-            let header_length = reader.read_u32::<LittleEndian>()?;
-            trace!("reading protobuf header of {} bytes", header_length);
-            let header = if header_length > 0 {
-                let mut bytes = vec![0; header_length as usize];
-                let num = reader.read(&mut bytes)?;
-                CMsgProtoBufHeader::parse_from_bytes(&bytes[0..num])
-                    .map_err(|_| NetworkError::InvalidHeader)?
-                    .into()
+    if header.steam_id != RawSteamId::NONE {
+        proto_header.set_steamid(
+            if kind == EMsg::k_EMsgServiceMethodCallFromClientNonAuthed {
+                0
             } else {
-                NetMessageHeader::default()
-            };
-            Ok((header, 8 + header_length as usize))
-        } else if kind == EMsg::k_EMsgChannelEncryptRequest
-            || kind == EMsg::k_EMsgChannelEncryptResult
-        {
-            let target_job_id = reader.read_u64::<LittleEndian>()?;
-            let source_job_id = reader.read_u64::<LittleEndian>()?;
-            Ok((
-                NetMessageHeader {
-                    target_job_id: JobId(target_job_id),
-                    source_job_id: JobId(source_job_id),
-                    session_id: 0,
-                    steam_id: steam_id_nil(),
-                    ..NetMessageHeader::default()
-                },
-                4 + 8 + 8,
-            ))
-        } else {
-            reader.seek(SeekFrom::Current(3))?; // 1 byte (fixed) header size, 2 bytes (fixed) header version
-            let target_job_id = reader.read_u64::<LittleEndian>()?;
-            let source_job_id = reader.read_u64::<LittleEndian>()?;
-            reader.seek(SeekFrom::Current(1))?; // header canary (fixed)
-            let steam_id = reader
-                .read_u64::<LittleEndian>()?
-                .try_into()
-                .unwrap_or(steam_id_nil());
-            let session_id = reader.read_i32::<LittleEndian>()?;
-            Ok((
-                NetMessageHeader {
-                    source_job_id: JobId(source_job_id),
-                    target_job_id: JobId(target_job_id),
-                    steam_id,
-                    session_id,
-                    target_job_name: None,
-                    result: None,
-                    source_app_id: None,
-                },
-                4 + 3 + 8 + 8 + 1 + 8 + 4,
-            ))
-        }
+                header.steam_id.id()
+            },
+        );
     }
-
-    pub(crate) fn write<W: WriteBytesExt, K: MsgKindEnum>(
-        &self,
-        writer: &mut W,
-        kind: K,
-        proto: bool,
-    ) -> std::io::Result<()> {
-        if MsgKind::from(kind) == EMsg::k_EMsgChannelEncryptResponse {
-            writer.write_u32::<LittleEndian>(kind.value() as u32)?;
-        } else if proto {
-            trace!("writing header for {:?} protobuf message: {:?}", kind, self);
-            let proto_header = self.proto_header(kind.into());
-            writer.write_u32::<LittleEndian>(kind.encode_kind(true))?;
-            writer.write_u32::<LittleEndian>(proto_header.compute_size() as u32)?;
-            proto_header.write_to_writer(writer)?;
-        } else {
-            trace!("writing header for {:?} message: {:?}", kind, self);
-            writer.write_u32::<LittleEndian>(kind.value() as u32)?;
-            writer.write_u8(32)?;
-            writer.write_u16::<LittleEndian>(2)?;
-            writer.write_u64::<LittleEndian>(self.target_job_id.0)?;
-            writer.write_u64::<LittleEndian>(self.source_job_id.0)?;
-            writer.write_u8(239)?;
-            writer.write_u64::<LittleEndian>(self.steam_id.into())?;
-            writer.write_i32::<LittleEndian>(self.session_id)?;
-        }
-        Ok(())
+    if header.session_id != 0 {
+        proto_header.set_client_sessionid(header.session_id);
     }
-
-    fn proto_header(&self, kind: MsgKind) -> CMsgProtoBufHeader {
-        let mut proto_header = CMsgProtoBufHeader::new();
-        if self.source_job_id != JobId::NONE {
-            proto_header.set_jobid_source(self.source_job_id.0);
-        }
-        if self.target_job_id != JobId::NONE {
-            proto_header.set_jobid_target(self.target_job_id.0);
-        }
-        if self.steam_id != steam_id_nil() {
-            proto_header.set_steamid(
-                if kind == EMsg::k_EMsgServiceMethodCallFromClientNonAuthed {
-                    0
-                } else {
-                    self.steam_id.into()
-                },
-            );
-        }
-        if self.session_id != 0 {
-            proto_header.set_client_sessionid(self.session_id);
-        }
-        if kind == EMsg::k_EMsgServiceMethodCallFromClientNonAuthed
-            || kind == EMsg::k_EMsgServiceMethodCallFromClient
-        {
-            proto_header.set_realm(1);
-        }
-        if let Some(target_job_name) = self.target_job_name.as_deref() {
-            proto_header.set_target_job_name(target_job_name.into());
-        }
-        proto_header.routing_appid = self.source_app_id;
-        proto_header
+    if kind == EMsg::k_EMsgServiceMethodCallFromClientNonAuthed
+        || kind == EMsg::k_EMsgServiceMethodCallFromClient
+    {
+        proto_header.set_realm(1);
     }
+    if let Some(target_job_name) = header.target_job_name.as_deref() {
+        proto_header.set_target_job_name(target_job_name.into());
+    }
+    proto_header.routing_appid = header.source_app_id;
+    proto_header
+}
 
-    pub fn encode_size(&self, kind: MsgKind, proto: bool) -> usize {
-        if kind == EMsg::k_EMsgChannelEncryptResponse {
-            4
-        } else if proto {
-            let proto_header = self.proto_header(kind);
-            4 + 4 + proto_header.compute_size() as usize
+pub(crate) fn read_header<R: ReadBytesExt + Seek>(
+    mut reader: R,
+    kind: MsgKind,
+    is_protobuf: bool,
+) -> Result<(NetMessageHeader, usize)> {
+    if is_protobuf {
+        let header_length = reader.read_u32::<LittleEndian>()?;
+        trace!("reading protobuf header of {} bytes", header_length);
+        let header = if header_length > 0 {
+            let mut bytes = vec![0; header_length as usize];
+            let num = reader.read(&mut bytes)?;
+            parse_proto_header(
+                CMsgProtoBufHeader::parse_from_bytes(&bytes[0..num])
+                    .map_err(|_| NetworkError::InvalidHeader)?,
+            )
         } else {
-            4 + 1 + 2 + 8 + 8 + 1 + 8 + 4 + 4
-        }
+            NetMessageHeader::default()
+        };
+        Ok((header, 8 + header_length as usize))
+    } else if kind == EMsg::k_EMsgChannelEncryptRequest || kind == EMsg::k_EMsgChannelEncryptResult
+    {
+        let target_job_id = reader.read_u64::<LittleEndian>()?;
+        let source_job_id = reader.read_u64::<LittleEndian>()?;
+        Ok((
+            NetMessageHeader {
+                target_job_id: JobId::new(target_job_id),
+                source_job_id: JobId::new(source_job_id),
+                session_id: 0,
+                steam_id: RawSteamId::NONE,
+                ..NetMessageHeader::default()
+            },
+            4 + 8 + 8,
+        ))
+    } else {
+        reader.seek(SeekFrom::Current(3))?; // 1 byte (fixed) header size, 2 bytes (fixed) header version
+        let target_job_id = reader.read_u64::<LittleEndian>()?;
+        let source_job_id = reader.read_u64::<LittleEndian>()?;
+        reader.seek(SeekFrom::Current(1))?; // header canary (fixed)
+        let steam_id = RawSteamId::new(reader.read_u64::<LittleEndian>()?);
+        let session_id = reader.read_i32::<LittleEndian>()?;
+        Ok((
+            NetMessageHeader {
+                source_job_id: JobId::new(source_job_id),
+                target_job_id: JobId::new(target_job_id),
+                steam_id,
+                session_id,
+                target_job_name: None,
+                result: None,
+                source_app_id: None,
+            },
+            4 + 3 + 8 + 8 + 1 + 8 + 4,
+        ))
+    }
+}
+
+pub(crate) fn write_header<W: WriteBytesExt, K: MsgKindEnum>(
+    header: &NetMessageHeader,
+    writer: &mut W,
+    kind: K,
+    proto: bool,
+) -> std::io::Result<()> {
+    if MsgKind::from(kind) == EMsg::k_EMsgChannelEncryptResponse {
+        writer.write_u32::<LittleEndian>(kind.value() as u32)?;
+    } else if proto {
+        trace!(
+            "writing header for {:?} protobuf message: {:?}",
+            kind,
+            header
+        );
+        let proto_header = proto_header(header, kind.into());
+        writer.write_u32::<LittleEndian>(kind.encode_kind(true))?;
+        writer.write_u32::<LittleEndian>(proto_header.compute_size() as u32)?;
+        proto_header.write_to_writer(writer)?;
+    } else {
+        trace!("writing header for {:?} message: {:?}", kind, header);
+        writer.write_u32::<LittleEndian>(kind.value() as u32)?;
+        writer.write_u8(32)?;
+        writer.write_u16::<LittleEndian>(2)?;
+        writer.write_u64::<LittleEndian>(header.target_job_id.id())?;
+        writer.write_u64::<LittleEndian>(header.source_job_id.id())?;
+        writer.write_u8(239)?;
+        writer.write_u64::<LittleEndian>(header.steam_id.id())?;
+        writer.write_i32::<LittleEndian>(header.session_id)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn header_encode_size(header: &NetMessageHeader, kind: MsgKind, proto: bool) -> usize {
+    if kind == EMsg::k_EMsgChannelEncryptResponse {
+        4
+    } else if proto {
+        let proto_header = proto_header(header, kind);
+        4 + 4 + proto_header.compute_size() as usize
+    } else {
+        4 + 1 + 2 + 8 + 8 + 1 + 8 + 4 + 4
     }
 }
 
@@ -278,7 +232,7 @@ impl RawNetMessage {
         );
 
         let header_start = reader.position() as usize;
-        let (header, body_start) = NetMessageHeader::read(&mut reader, kind, is_protobuf)?;
+        let (header, body_start) = read_header(&mut reader, kind, is_protobuf)?;
 
         value.advance(header_start);
         let header_buffer = value.split_to(body_start - header_start);
@@ -316,7 +270,7 @@ impl RawNetMessage {
         //
         // 8 byte frame header, 16 byte iv, header, body, 16 byte encryption padding
         let mut buff = BytesMut::with_capacity(
-            8 + 16 + header.encode_size(kind.into(), is_protobuf) + body_size + 16,
+            8 + 16 + header_encode_size(&header, kind.into(), is_protobuf) + body_size + 16,
         );
         buff.extend([0; 8 + 16]);
         let frame_header_buffer = buff.split_to(8);
@@ -324,7 +278,7 @@ impl RawNetMessage {
 
         {
             let mut writer = (&mut buff).writer();
-            header.write(&mut writer, kind, is_protobuf)?;
+            write_header(&header, &mut writer, kind, is_protobuf)?;
         }
 
         let header_buffer = buff.split();
@@ -362,7 +316,8 @@ impl RawNetMessage {
                 self.kind,
                 self.data.len()
             );
-            let body = T::read_body(self.data, &self.header)?;
+            let body = T::read_body(self.data, &self.header)
+                .map_err(|err| MalformedBody::new(T::KIND, err))?;
             Ok((self.header, body))
         } else {
             Err(NetworkError::DifferentMessage(T::KIND.into(), self.kind))

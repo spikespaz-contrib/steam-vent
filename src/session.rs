@@ -1,15 +1,15 @@
-use crate::NetMessage;
 use crate::auth::{ConfirmationError, ConfirmationMethod};
+use crate::connection::ConnectionImpl;
 use crate::connection::raw::RawConnection;
 use crate::connection::unauthenticated::AccessTokenError;
-use crate::connection::{ConnectionImpl, ConnectionTrait};
 use crate::eresult::EResult;
-use crate::net::{JobId, NetMessageHeader, NetworkError};
+use crate::net::NetworkError;
 use protobuf::MessageField;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
+use steam_vent_common::{JobId, NetMessage, NetMessageHeader, RawSteamId};
 use steam_vent_crypto::CryptError;
 use steam_vent_proto_steam::steammessages_base::CMsgIPAddress;
 use steam_vent_proto_steam::steammessages_base::cmsg_ipaddress;
@@ -98,7 +98,7 @@ pub struct JobIdCounter(Arc<AtomicU64>);
 impl JobIdCounter {
     #[allow(clippy::should_implement_trait)]
     pub fn next(&self) -> JobId {
-        JobId(self.0.fetch_add(1, Ordering::Relaxed))
+        JobId::new(self.0.fetch_add(1, Ordering::Relaxed))
     }
 }
 
@@ -115,7 +115,7 @@ pub struct Session {
     pub public_ip: Option<IpAddr>,
     pub ip_country_code: Option<String>,
     pub job_id: JobIdCounter,
-    pub steam_id: SteamID,
+    pub steam_id: Option<SteamID>,
     pub heartbeat_interval: Duration,
     pub app_id: Option<u32>,
     pub access_token: Option<String>,
@@ -129,7 +129,7 @@ impl Default for Session {
             public_ip: None,
             ip_country_code: None,
             job_id: JobIdCounter::default(),
-            steam_id: crate::net::steam_id_nil(),
+            steam_id: None,
             heartbeat_interval: Duration::from_secs(15),
             app_id: None,
             access_token: None,
@@ -143,15 +143,23 @@ impl Session {
             session_id: self.session_id,
             source_job_id: if job { self.job_id.next() } else { JobId::NONE },
             target_job_id: JobId::NONE,
-            steam_id: self.steam_id,
+            steam_id: self
+                .steam_id
+                .map(|id| RawSteamId::new(id.steam64()))
+                .unwrap_or_default(),
             source_app_id: self.app_id,
             ..NetMessageHeader::default()
         }
     }
 
     pub fn is_server(&self) -> bool {
-        self.steam_id.account_type() == AccountType::AnonGameServer
-            || self.steam_id.account_type() == AccountType::GameServer
+        match self.steam_id {
+            Some(steam_id) => {
+                steam_id.account_type() == AccountType::AnonGameServer
+                    || steam_id.account_type() == AccountType::GameServer
+            }
+            _ => false,
+        }
     }
 
     pub fn with_app_id(mut self, app_id: u32) -> Self {
@@ -227,7 +235,7 @@ async fn send_logon(
     let header = NetMessageHeader {
         source_job_id: JobId::NONE,
         target_job_id: JobId::NONE,
-        steam_id,
+        steam_id: RawSteamId::new(steam_id.steam64()),
         ..NetMessageHeader::default()
     };
 
@@ -243,8 +251,8 @@ async fn send_logon(
     let assigned_steam_id = if response.has_client_supplied_steamid() {
         let raw = response.client_supplied_steamid();
         SteamID::try_from(raw).unwrap_or(steam_id)
-    } else if header.steam_id != crate::net::steam_id_nil() {
-        header.steam_id
+    } else if header.steam_id != RawSteamId::NONE {
+        SteamID::from_steam64(header.steam_id.id()).unwrap_or(steam_id)
     } else {
         steam_id
     };
@@ -263,7 +271,7 @@ async fn send_logon(
             _ => None,
         }),
         ip_country_code: response.ip_country_code.clone(),
-        steam_id: assigned_steam_id,
+        steam_id: Some(assigned_steam_id),
         job_id: JobIdCounter::default(),
         heartbeat_interval: Duration::from_secs(response.heartbeat_seconds() as u64),
         app_id: None,
@@ -282,7 +290,7 @@ pub async fn hello<C: ConnectionImpl>(conn: &mut C) -> std::result::Result<(), N
         session_id: 0,
         source_job_id: JobId::NONE,
         target_job_id: JobId::NONE,
-        steam_id: crate::net::steam_id_nil(),
+        steam_id: RawSteamId::NONE,
         ..NetMessageHeader::default()
     };
 

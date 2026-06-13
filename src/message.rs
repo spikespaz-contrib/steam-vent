@@ -1,5 +1,4 @@
-use crate::net::{NetMessageHeader, NetworkError, RawNetMessage};
-use crate::service_method::ServiceMethodRequest;
+use crate::net::{NetworkError, RawNetMessage};
 use binrw::BinRead;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use bytes::{Buf, BytesMut};
@@ -10,12 +9,12 @@ use futures_util::{
     stream::{iter, once},
     StreamExt,
 };
-use num_bigint_dig::ParseBigIntError;
 use protobuf::Message;
-use std::any::type_name;
-use std::fmt::Debug;
+use std::io::Error as IoError;
 use std::io::{Cursor, Read, Write};
-use steam_vent_proto_common::{MsgKind, MsgKindEnum, RpcMessage, RpcMessageWithKind};
+use std::{fmt::Debug, io::ErrorKind};
+use steam_vent_common::{EncodableMessage, NetMessage, NetMessageHeader, ServiceMethodRequest};
+use steam_vent_proto_common::{MsgKind, RpcMessage};
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steam_vent_proto_steam::steammessages_base::CMsgMulti;
 use thiserror::Error;
@@ -25,10 +24,10 @@ use tracing::{debug, trace};
 /// Malformed message body
 #[derive(Error, Debug)]
 #[error("Malformed message body for {0:?}: {1}")]
-pub struct MalformedBody(MsgKind, MessageBodyError);
+pub struct MalformedBody(MsgKind, MessageParseError);
 
 impl MalformedBody {
-    pub fn new<K: Into<MsgKind>>(kind: K, err: impl Into<MessageBodyError>) -> Self {
+    pub fn new<K: Into<MsgKind>>(kind: K, err: impl Into<MessageParseError>) -> Self {
         MalformedBody(kind.into(), err.into())
     }
 }
@@ -36,53 +35,10 @@ impl MalformedBody {
 /// Error while parsing the message body
 #[derive(Error, Debug)]
 #[non_exhaustive]
-pub enum MessageBodyError {
-    #[error("{0}")]
-    Protobuf(#[from] protobuf::Error),
-    #[error("{0}")]
-    BinRead(#[from] binrw::Error),
-    #[error("{0}")]
-    IO(#[from] std::io::Error),
-    #[error("{0}")]
-    Other(String),
-    #[error("malformed big int: {0:#}")]
-    BigInt(#[from] ParseBigIntError),
-    #[error("invalid rsa key: {0:#}")]
-    Rsa(#[from] rsa::Error),
-}
-
-impl From<String> for MessageBodyError {
-    fn from(e: String) -> Self {
-        MessageBodyError::Other(e)
-    }
-}
-
-/// A message which can be encoded and/or decoded
-///
-/// Applications can implement this trait on a struct to allow sending it using
-/// [`raw_send_with_kind`](crate::ConnectionTrait::raw_send_with_kind). To use the higher level messages a struct also needs to implement
-/// [`NetMessage`]
-pub trait EncodableMessage: Sized + Debug + Send {
-    fn read_body(_data: BytesMut, _header: &NetMessageHeader) -> Result<Self, MalformedBody> {
-        panic!("Reading not implemented for {}", type_name::<Self>())
-    }
-
-    fn write_body<W: Write>(&self, _writer: W) -> Result<(), std::io::Error> {
-        panic!("Writing not implemented for {}", type_name::<Self>())
-    }
-
-    fn encode_size(&self) -> usize {
-        panic!("Writing not implemented for {}", type_name::<Self>())
-    }
-
-    fn process_header(&self, _header: &mut NetMessageHeader) {}
-}
-
-/// A message with associated kind
-pub trait NetMessage: EncodableMessage {
-    type KindEnum: MsgKindEnum;
-    const KIND: Self::KindEnum;
-    const IS_PROTOBUF: bool = false;
+#[error("{error:#}")]
+pub struct MessageParseError {
+    #[from]
+    error: IoError,
 }
 
 #[derive(Debug, BinRead)]
@@ -94,11 +50,18 @@ pub(crate) struct ChannelEncryptRequest {
     pub nonce: [u8; 16],
 }
 
+fn extract_io_error(error: binrw::Error) -> IoError {
+    match error {
+        binrw::Error::Io(error) => error,
+        error => IoError::other(error),
+    }
+}
+
 impl EncodableMessage for ChannelEncryptRequest {
-    fn read_body(data: BytesMut, _header: &NetMessageHeader) -> Result<Self, MalformedBody> {
+    fn read_body(data: BytesMut, _header: &NetMessageHeader) -> Result<Self, IoError> {
         trace!("reading body of {:?} message", Self::KIND);
         let mut reader = Cursor::new(data);
-        ChannelEncryptRequest::read(&mut reader).map_err(|e| MalformedBody::new(Self::KIND, e))
+        ChannelEncryptRequest::read(&mut reader).map_err(extract_io_error)
     }
 }
 
@@ -114,10 +77,10 @@ pub(crate) struct ChannelEncryptResult {
 }
 
 impl EncodableMessage for ChannelEncryptResult {
-    fn read_body(data: BytesMut, _header: &NetMessageHeader) -> Result<Self, MalformedBody> {
+    fn read_body(data: BytesMut, _header: &NetMessageHeader) -> Result<Self, IoError> {
         trace!("reading body of {:?} message", Self::KIND);
         let mut reader = Cursor::new(data);
-        ChannelEncryptResult::read(&mut reader).map_err(|e| MalformedBody::new(Self::KIND, e))
+        ChannelEncryptResult::read(&mut reader).map_err(extract_io_error)
     }
 }
 
@@ -135,7 +98,7 @@ pub(crate) struct ClientEncryptResponse {
 const CRC: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 
 impl EncodableMessage for ClientEncryptResponse {
-    fn write_body<W: Write>(&self, mut writer: W) -> Result<(), std::io::Error> {
+    fn write_body<W: Write>(&self, mut writer: W) -> Result<(), IoError> {
         trace!("writing body of {:?} message", Self::KIND);
         writer.write_u64::<LittleEndian>(u64::MAX)?;
         writer.write_u64::<LittleEndian>(u64::MAX)?;
@@ -198,7 +161,7 @@ struct MultiBodyIter<R> {
 impl MultiBodyIter<MaybeZipReader> {
     pub fn new<R: Read>(mut reader: R) -> Result<Self, MalformedBody> {
         let mut multi = CMsgMulti::parse_from_reader(&mut reader)
-            .map_err(|e| MalformedBody(EMsg::k_EMsgMulti.into(), e.into()))?;
+            .map_err(|e| MalformedBody::new(EMsg::k_EMsgMulti, IoError::from(e)))?;
 
         let data = match multi.size_unzipped() {
             0 => MaybeZipReader::Raw(Cursor::new(multi.take_message_body())),
@@ -240,18 +203,16 @@ impl<R: Read> Iterator for MultiBodyIter<R> {
 pub(crate) struct ServiceMethodMessage<Request: Debug>(pub Request);
 
 impl<Request: ServiceMethodRequest + Debug> EncodableMessage for ServiceMethodMessage<Request> {
-    fn read_body(data: BytesMut, _header: &NetMessageHeader) -> Result<Self, MalformedBody> {
+    fn read_body(data: BytesMut, _header: &NetMessageHeader) -> Result<Self, IoError> {
         trace!("reading body of protobuf message {:?}", Self::KIND);
-        Request::parse(&mut data.reader())
-            .map_err(|e| MalformedBody::new(Self::KIND, e))
-            .map(ServiceMethodMessage)
+        Request::parse(&mut data.reader()).map(ServiceMethodMessage)
     }
 
-    fn write_body<W: Write>(&self, mut writer: W) -> Result<(), std::io::Error> {
+    fn write_body<W: Write>(&self, mut writer: W) -> Result<(), IoError> {
         trace!("writing body of protobuf message {:?}", Self::KIND);
         self.0
             .write(&mut writer)
-            .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidData))
+            .map_err(|_| IoError::from(ErrorKind::InvalidData))
     }
 
     fn encode_size(&self) -> usize {
@@ -281,7 +242,7 @@ impl ServiceMethodResponseMessage {
     ) -> Result<Request::Response, NetworkError> {
         if self.job_name == Request::REQ_NAME {
             Ok(Request::Response::parse(&mut self.body.reader())
-                .map_err(|e| MalformedBody::new(Self::KIND, e))?)
+                .map_err(|e| MalformedBody::new(Self::KIND, IoError::from(e)))?)
         } else {
             Err(NetworkError::DifferentServiceMethod(
                 Request::REQ_NAME,
@@ -292,7 +253,7 @@ impl ServiceMethodResponseMessage {
 }
 
 impl EncodableMessage for ServiceMethodResponseMessage {
-    fn read_body(data: BytesMut, header: &NetMessageHeader) -> Result<Self, MalformedBody> {
+    fn read_body(data: BytesMut, header: &NetMessageHeader) -> Result<Self, IoError> {
         trace!("reading body of protobuf message {:?}", Self::KIND);
         Ok(ServiceMethodResponseMessage {
             job_name: header
@@ -332,7 +293,7 @@ impl ServiceMethodNotification {
 }
 
 impl EncodableMessage for ServiceMethodNotification {
-    fn read_body(data: BytesMut, header: &NetMessageHeader) -> Result<Self, MalformedBody> {
+    fn read_body(data: BytesMut, header: &NetMessageHeader) -> Result<Self, IoError> {
         trace!("reading body of protobuf message {:?}", Self::KIND);
         Ok(ServiceMethodNotification {
             job_name: header
@@ -348,28 +309,5 @@ impl EncodableMessage for ServiceMethodNotification {
 impl NetMessage for ServiceMethodNotification {
     type KindEnum = EMsg;
     const KIND: Self::KindEnum = EMsg::k_EMsgServiceMethod;
-    const IS_PROTOBUF: bool = true;
-}
-
-impl<ProtoMsg: RpcMessageWithKind + Send> EncodableMessage for ProtoMsg {
-    fn read_body(data: BytesMut, _header: &NetMessageHeader) -> Result<Self, MalformedBody> {
-        trace!("reading body of protobuf message {:?}", Self::KIND);
-        Self::parse(&mut data.reader()).map_err(|e| MalformedBody::new(Self::KIND, e))
-    }
-
-    fn write_body<W: Write>(&self, mut writer: W) -> Result<(), std::io::Error> {
-        trace!("writing body of protobuf message {:?}", Self::KIND);
-        self.write(&mut writer)
-            .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidData))
-    }
-
-    fn encode_size(&self) -> usize {
-        <Self as RpcMessage>::encode_size(self)
-    }
-}
-
-impl<ProtoMsg: RpcMessageWithKind + Send> NetMessage for ProtoMsg {
-    type KindEnum = ProtoMsg::KindEnum;
-    const KIND: Self::KindEnum = <ProtoMsg as RpcMessageWithKind>::KIND;
     const IS_PROTOBUF: bool = true;
 }

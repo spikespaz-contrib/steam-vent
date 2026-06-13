@@ -1986,6 +1986,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "steam-vent-common",
  "steam-vent-crypto",
  "steam-vent-proto",
  "steam-vent-proto-common",
@@ -2000,6 +2001,17 @@ dependencies = [
  "tracing-subscriber",
  "vdf-reader",
  "webpki-roots 1.0.6",
+]
+
+[[package]]
+name = "steam-vent-common"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "steam-vent-proto-common",
+ "thiserror 2.0.18",
+ "tokio-stream",
+ "tracing",
 ]
 
 [[package]]

@@ -1,10 +1,11 @@
 use crate::message::ServiceMethodNotification;
-use crate::net::{JobId, RawNetMessage};
+use crate::net::RawNetMessage;
 use dashmap::DashMap;
 use futures_util::Stream;
 use std::collections::VecDeque;
 use std::pin::pin;
 use std::sync::{Arc, Mutex};
+use steam_vent_common::JobId;
 use steam_vent_proto_common::MsgKind;
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use tokio::spawn;
@@ -78,7 +79,7 @@ impl MessageFilter {
             while let Some(res) = source.next().await {
                 match res {
                     Ok(message) => {
-                        debug!(job_id = message.header.target_job_id.0, kind = ?message.kind, "processing message");
+                        debug!(job_id = ?message.header.target_job_id, kind = ?message.kind, "processing message");
                         if let Some((_, tx)) = filter_send
                             .job_id_filters
                             .remove(&message.header.target_job_id)

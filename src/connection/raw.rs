@@ -1,7 +1,7 @@
 use super::Result;
 use crate::connection::{ConnectionImpl, MessageFilter, MessageSender};
-use crate::message::{EncodableMessage, flatten_multi};
-use crate::net::{NetMessageHeader, RawNetMessage};
+use crate::message::flatten_multi;
+use crate::net::RawNetMessage;
 use crate::session::{Session, hello};
 use crate::transport::websocket::connect;
 use crate::{ConnectionError, NetworkError, ServerList};
@@ -11,6 +11,7 @@ use std::fmt::{Debug, Formatter};
 use std::future::ready;
 use std::sync::Arc;
 use std::time::Duration;
+use steam_vent_common::{EncodableMessage, NetMessageHeader, RawSteamId};
 use steam_vent_proto_common::MsgKindEnum;
 use steam_vent_proto_steam::steammessages_clientserver_login::CMsgClientHeartBeat;
 use tokio::sync::Mutex;
@@ -74,7 +75,11 @@ impl RawConnection {
         let interval = self.session.heartbeat_interval;
         let header = NetMessageHeader {
             session_id: self.session.session_id,
-            steam_id: self.session().steam_id,
+            steam_id: self
+                .session()
+                .steam_id
+                .map(|id| RawSteamId::new(id.steam64()))
+                .unwrap_or_default(),
             ..NetMessageHeader::default()
         };
         debug!("Setting up heartbeat with interval {:?}", interval);

@@ -1,8 +1,7 @@
 pub mod handshake;
 
-use crate::connection::{ConnectionImpl, ConnectionTrait, MessageFilter, MessageSender};
-use crate::message::EncodableMessage;
-use crate::net::{JobId, NetMessageHeader, RawNetMessage, decode_kind};
+use crate::connection::{ConnectionImpl, MessageFilter, MessageSender};
+use crate::net::{RawNetMessage, decode_kind, header_encode_size, write_header};
 use crate::session::Session;
 use crate::{Connection, NetMessage, NetworkError};
 use futures_util::future::{Either, select};
@@ -10,6 +9,7 @@ use protobuf::Message;
 use std::fmt::{Debug, Formatter};
 use std::pin::pin;
 use std::time::Duration;
+use steam_vent_common::{ConnectionTrait, EncodableMessage, JobId, NetMessageHeader};
 use steam_vent_proto_common::{GCHandshake, MsgKindEnum, RpcMessage, RpcMessageWithKind};
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steam_vent_proto_steam::steammessages_clientserver::CMsgClientGamesPlayed;
@@ -216,10 +216,10 @@ impl ConnectionImpl for GameCoordinator {
         header.source_job_id = JobId::default();
 
         let mut payload: Vec<u8> = Vec::with_capacity(
-            nested_header.encode_size(kind.into(), is_protobuf) + msg.encode_size(),
+            header_encode_size(&nested_header, kind.into(), is_protobuf) + msg.encode_size(),
         );
 
-        nested_header.write(&mut payload, kind, is_protobuf)?;
+        write_header(&nested_header, &mut payload, kind, is_protobuf)?;
         msg.write_body(&mut payload)?;
         let data = CMsgGCClient {
             appid: Some(self.app_id),

@@ -4,12 +4,9 @@ pub(crate) mod unauthenticated;
 
 use crate::GameCoordinator;
 use crate::auth::{AuthConfirmationHandler, GuardDataStore};
-use crate::message::{
-    EncodableMessage, NetMessage, ServiceMethodMessage, ServiceMethodResponseMessage,
-};
-use crate::net::{NetMessageHeader, NetworkError, RawNetMessage};
+use crate::message::{ServiceMethodMessage, ServiceMethodResponseMessage};
+use crate::net::{NetworkError, RawNetMessage};
 use crate::serverlist::ServerList;
-use crate::service_method::ServiceMethodRequest;
 use crate::session::{ConnectionError, Session};
 use async_stream::try_stream;
 pub(crate) use filter::MessageFilter;
@@ -20,6 +17,8 @@ use std::future::Future;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
+pub use steam_vent_common::{ConnectionTrait, ReadonlyConnection};
+use steam_vent_common::{EncodableMessage, NetMessage, NetMessageHeader, ServiceMethodRequest};
 use steam_vent_proto_common::{GCHandshake, JobMultiple, MsgKindEnum};
 use steamid_ng::SteamID;
 use tokio::sync::Mutex;
@@ -107,7 +106,9 @@ impl Connection {
     }
 
     pub fn steam_id(&self) -> SteamID {
-        self.session().steam_id
+        self.session()
+            .steam_id
+            .expect("authenticated connections always have a steamid")
     }
 
     pub fn session_id(&self) -> i32 {
@@ -158,93 +159,45 @@ pub(crate) trait ConnectionImpl: Sync + Debug {
     fn filter(&self) -> &MessageFilter;
     fn session(&self) -> &Session;
 
-    fn raw_send_with_kind<Msg: EncodableMessage, K: MsgKindEnum>(
-        &self,
-        header: NetMessageHeader,
-        msg: Msg,
-        kind: K,
-        is_protobuf: bool,
-    ) -> impl Future<Output = Result<()>> + Send;
-}
-
-/// A trait for connections that only allow listening for messages coming from steam
-pub trait ReadonlyConnection {
-    fn on_notification<T: ServiceMethodRequest>(&self) -> impl Stream<Item = Result<T>> + 'static;
-
-    /// Wait for one message of a specific kind, also returning the header
     fn one_with_header<T: NetMessage + 'static>(
         &self,
-    ) -> impl Future<Output = Result<(NetMessageHeader, T)>> + 'static;
+    ) -> impl Future<Output = Result<(NetMessageHeader, T)>> + 'static {
+        // async block instead of async fn, so we don't have to tie the lifetime of the returned future
+        // to the lifetime of &self
+        let fut = self.filter().one_kind(T::KIND);
+        async move {
+            let raw = fut.await.map_err(|_| NetworkError::EOF)?;
+            raw.into_header_and_message()
+        }
+    }
 
-    /// Wait for one message of a specific kind
-    fn one<T: NetMessage + 'static>(&self) -> impl Future<Output = Result<T>> + 'static;
-
-    /// Listen to messages of a specific kind, also returning the header
     fn on_with_header<T: NetMessage + 'static>(
         &self,
-    ) -> impl Stream<Item = Result<(NetMessageHeader, T)>> + 'static;
+    ) -> impl Stream<Item = Result<(NetMessageHeader, T)>> + 'static {
+        BroadcastStream::new(self.filter().on_kind(T::KIND)).map(|raw| {
+            let raw = raw.map_err(|_| NetworkError::EOF)?;
+            raw.into_header_and_message()
+        })
+    }
 
-    /// Listen to messages of a specific kind
-    fn on<T: NetMessage + 'static>(&self) -> impl Stream<Item = Result<T>> + 'static;
-}
-
-/// A trait for sending messages to steam
-pub trait ConnectionTrait {
-    /// Listen for notification messages from steam
-    fn on_notification<T: ServiceMethodRequest>(&self) -> impl Stream<Item = Result<T>> + 'static;
-
-    /// Wait for one message of a specific kind, also returning the header
-    fn one_with_header<T: NetMessage + 'static>(
-        &self,
-    ) -> impl Future<Output = Result<(NetMessageHeader, T)>> + 'static;
-
-    /// Wait for one message of a specific kind
-    fn one<T: NetMessage + 'static>(&self) -> impl Future<Output = Result<T>> + 'static;
-
-    /// Listen to messages of a specific kind, also returning the header
-    fn on_with_header<T: NetMessage + 'static>(
-        &self,
-    ) -> impl Stream<Item = Result<(NetMessageHeader, T)>> + 'static;
-
-    /// Listen to messages of a specific kind
-    fn on<T: NetMessage + 'static>(&self) -> impl Stream<Item = Result<T>> + 'static;
-
-    /// Send a rpc-request to steam, waiting for the matching rpc-response
-    fn service_method<Msg: ServiceMethodRequest>(
-        &self,
-        msg: Msg,
-    ) -> impl Future<Output = Result<Msg::Response>> + Send;
-
-    /// Send a message to steam, waiting for a response with the same job id
-    fn job<Msg: NetMessage, Rsp: NetMessage>(
-        &self,
-        msg: Msg,
-    ) -> impl Future<Output = Result<Rsp>> + Send;
-
-    /// Send a message to steam, receiving responses until the response marks that the response is complete
-    fn job_multi<Msg: NetMessage, Rsp: NetMessage + JobMultiple>(
-        &self,
-        msg: Msg,
-    ) -> impl Stream<Item = Result<Rsp>> + Send;
-
-    /// Send a message to steam without waiting for a response
-    fn send<Msg: NetMessage>(&self, msg: Msg) -> impl Future<Output = Result<()>> + Send;
-
-    /// Send a message to steam without waiting for a response, overwriting the kind of the message
+    #[instrument(skip(msg, kind), fields(kind = ?kind))]
     fn send_with_kind<Msg: NetMessage, K: MsgKindEnum>(
         &self,
         msg: Msg,
         kind: K,
-    ) -> impl Future<Output = Result<()>> + Send;
+    ) -> impl Future<Output = Result<()>> + Send {
+        let header = self.session().header(false);
+        self.raw_send_with_kind(header, msg, kind, Msg::IS_PROTOBUF)
+    }
 
-    /// Send a message to steam without waiting for a response, with a customized header↑
     fn raw_send<Msg: NetMessage>(
         &self,
         header: NetMessageHeader,
         msg: Msg,
-    ) -> impl Future<Output = Result<()>> + Send;
+    ) -> impl Future<Output = Result<()>> + Send {
+        self.raw_send_with_kind(header, msg, Msg::KIND, Msg::IS_PROTOBUF)
+    }
 
-    /// Send a message to steam without waiting for a response, with a customized header↑ and overwriting the kind of the message
     fn raw_send_with_kind<Msg: EncodableMessage, K: MsgKindEnum>(
         &self,
         header: NetMessageHeader,
@@ -285,122 +238,88 @@ impl ConnectionImpl for Connection {
     }
 }
 
-impl<C: ConnectionImpl> ConnectionTrait for C {
-    fn on_notification<T: ServiceMethodRequest>(&self) -> impl Stream<Item = Result<T>> + 'static {
-        BroadcastStream::new(self.filter().on_notification(T::REQ_NAME))
-            .filter_map(|res| res.ok())
-            .map(|raw| raw.into_notification())
-    }
+macro_rules! impl_connection {
+    ($con:path) => {
+        impl ConnectionTrait for $con {
+            type Error = NetworkError;
 
-    fn one_with_header<T: NetMessage + 'static>(
-        &self,
-    ) -> impl Future<Output = Result<(NetMessageHeader, T)>> + 'static {
-        // async block instead of async fn, so we don't have to tie the lifetime of the returned future
-        // to the lifetime of &self
-        let fut = self.filter().one_kind(T::KIND);
-        async move {
-            let raw = fut.await.map_err(|_| NetworkError::EOF)?;
-            raw.into_header_and_message()
-        }
-    }
+            fn on_notification<T: ServiceMethodRequest>(
+                &self,
+            ) -> impl Stream<Item = Result<T>> + 'static {
+                BroadcastStream::new(self.filter().on_notification(T::REQ_NAME))
+                    .filter_map(|res| res.ok())
+                    .map(|raw| raw.into_notification())
+            }
 
-    fn one<T: NetMessage + 'static>(&self) -> impl Future<Output = Result<T>> + 'static {
-        self.one_with_header::<T>()
-            .map(|res| res.map(|(_, msg)| msg))
-    }
+            fn one<T: NetMessage + 'static>(&self) -> impl Future<Output = Result<T>> + 'static {
+                self.one_with_header::<T>()
+                    .map(|res| res.map(|(_, msg)| msg))
+            }
 
-    fn on_with_header<T: NetMessage + 'static>(
-        &self,
-    ) -> impl Stream<Item = Result<(NetMessageHeader, T)>> + 'static {
-        BroadcastStream::new(self.filter().on_kind(T::KIND)).map(|raw| {
-            let raw = raw.map_err(|_| NetworkError::EOF)?;
-            raw.into_header_and_message()
-        })
-    }
+            fn on<T: NetMessage + 'static>(&self) -> impl Stream<Item = Result<T>> + 'static {
+                self.on_with_header::<T>()
+                    .map(|res| res.map(|(_, msg)| msg))
+            }
 
-    fn on<T: NetMessage + 'static>(&self) -> impl Stream<Item = Result<T>> + 'static {
-        self.on_with_header::<T>()
-            .map(|res| res.map(|(_, msg)| msg))
-    }
-
-    async fn service_method<Msg: ServiceMethodRequest>(&self, msg: Msg) -> Result<Msg::Response> {
-        let header = self.session().header(true);
-        let recv = self.filter().on_job_id(header.source_job_id);
-        self.raw_send(header, ServiceMethodMessage(msg)).await?;
-        let message = timeout(self.timeout(), recv)
-            .await
-            .map_err(|_| NetworkError::Timeout)?
-            .map_err(|_| NetworkError::EOF)?
-            .into_message::<ServiceMethodResponseMessage>()?;
-        message.into_response::<Msg>()
-    }
-
-    async fn job<Msg: NetMessage, Rsp: NetMessage>(&self, msg: Msg) -> Result<Rsp> {
-        let header = self.session().header(true);
-        let recv = self.filter().on_job_id(header.source_job_id);
-        self.raw_send(header, msg).await?;
-        timeout(self.timeout(), recv)
-            .await
-            .map_err(|_| NetworkError::Timeout)?
-            .map_err(|_| NetworkError::EOF)?
-            .into_message()
-    }
-
-    fn job_multi<Msg: NetMessage, Rsp: NetMessage + JobMultiple>(
-        &self,
-        msg: Msg,
-    ) -> impl Stream<Item = Result<Rsp>> + Send {
-        try_stream! {
-            let header = self.session().header(true);
-            let source_job_id = header.source_job_id;
-            let mut recv = self.filter().on_job_id_multi(source_job_id);
-            self.raw_send(header, msg).await?;
-            loop {
-                let msg: Rsp = timeout(self.timeout(), recv.recv())
+            async fn service_method<Msg: ServiceMethodRequest>(
+                &self,
+                msg: Msg,
+            ) -> Result<Msg::Response> {
+                let header = self.session().header(true);
+                let recv = self.filter().on_job_id(header.source_job_id);
+                self.raw_send(header, ServiceMethodMessage(msg)).await?;
+                let message = timeout(self.timeout(), recv)
                     .await
                     .map_err(|_| NetworkError::Timeout)?
-                    .ok_or(NetworkError::EOF)?
-                    .into_message()?;
-                let completed = msg.completed();
-                yield msg;
-                if completed {
-                    break;
+                    .map_err(|_| NetworkError::EOF)?
+                    .into_message::<ServiceMethodResponseMessage>()?;
+                message.into_response::<Msg>()
+            }
+
+            async fn job<Msg: NetMessage, Rsp: NetMessage>(&self, msg: Msg) -> Result<Rsp> {
+                let header = self.session().header(true);
+                let recv = self.filter().on_job_id(header.source_job_id);
+                self.raw_send(header, msg).await?;
+                timeout(self.timeout(), recv)
+                    .await
+                    .map_err(|_| NetworkError::Timeout)?
+                    .map_err(|_| NetworkError::EOF)?
+                    .into_message()
+            }
+
+            fn job_multi<Msg: NetMessage, Rsp: NetMessage + JobMultiple>(
+                &self,
+                msg: Msg,
+            ) -> impl Stream<Item = Result<Rsp>> + Send {
+                try_stream! {
+                    let header = self.session().header(true);
+                    let source_job_id = header.source_job_id;
+                    let mut recv = self.filter().on_job_id_multi(source_job_id);
+                    self.raw_send(header, msg).await?;
+                    loop {
+                        let msg: Rsp = timeout(self.timeout(), recv.recv())
+                            .await
+                            .map_err(|_| NetworkError::Timeout)?
+                            .ok_or(NetworkError::EOF)?
+                            .into_message()?;
+                        let completed = msg.completed();
+                        yield msg;
+                        if completed {
+                            break;
+                        }
+                    }
+                    self.filter().complete_job_id_multi(source_job_id);
                 }
             }
-            self.filter().complete_job_id_multi(source_job_id);
+
+            #[instrument(skip(msg), fields(kind = ?Msg::KIND))]
+            fn send<Msg: NetMessage>(&self, msg: Msg) -> impl Future<Output = Result<()>> + Send {
+                self.raw_send(self.session().header(false), msg)
+            }
         }
-    }
-
-    #[instrument(skip(msg), fields(kind = ?Msg::KIND))]
-    fn send<Msg: NetMessage>(&self, msg: Msg) -> impl Future<Output = Result<()>> + Send {
-        self.raw_send(self.session().header(false), msg)
-    }
-
-    #[instrument(skip(msg, kind), fields(kind = ?kind))]
-    fn send_with_kind<Msg: NetMessage, K: MsgKindEnum>(
-        &self,
-        msg: Msg,
-        kind: K,
-    ) -> impl Future<Output = Result<()>> + Send {
-        let header = self.session().header(false);
-        self.raw_send_with_kind(header, msg, kind, Msg::IS_PROTOBUF)
-    }
-
-    fn raw_send<Msg: NetMessage>(
-        &self,
-        header: NetMessageHeader,
-        msg: Msg,
-    ) -> impl Future<Output = Result<()>> + Send {
-        self.raw_send_with_kind(header, msg, Msg::KIND, Msg::IS_PROTOBUF)
-    }
-
-    fn raw_send_with_kind<Msg: EncodableMessage, K: MsgKindEnum>(
-        &self,
-        header: NetMessageHeader,
-        msg: Msg,
-        kind: K,
-        is_protobuf: bool,
-    ) -> impl Future<Output = Result<()>> + Send {
-        <Self as ConnectionImpl>::raw_send_with_kind(self, header, msg, kind, is_protobuf)
-    }
+    };
 }
+
+impl_connection!(RawConnection);
+impl_connection!(Connection);
+impl_connection!(GameCoordinator);

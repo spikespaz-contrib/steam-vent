@@ -1,7 +1,7 @@
 use crate::message::{
-    ChannelEncryptRequest, ChannelEncryptResult, ClientEncryptResponse, NetMessage, flatten_multi,
+    ChannelEncryptRequest, ChannelEncryptResult, ClientEncryptResponse, flatten_multi,
 };
-use crate::net::{NetMessageHeader, NetworkError, RawNetMessage};
+use crate::net::{NetworkError, RawNetMessage, write_header};
 use crate::transport::assert_can_unsplit;
 use bytemuck::{Pod, Zeroable, cast};
 use bytes::{Buf, BufMut, BytesMut};
@@ -9,6 +9,7 @@ use futures_util::future::ready;
 use futures_util::{Sink, SinkExt, StreamExt, TryStreamExt};
 use std::convert::TryInto;
 use std::fmt::Debug;
+use steam_vent_common::{NetMessage, NetMessageHeader};
 use steam_vent_crypto::{
     generate_session_key, symmetric_decrypt, symmetric_encrypt_with_iv_buffer,
 };
@@ -142,7 +143,7 @@ pub async fn encode_message<T: NetMessage, S: Sink<BytesMut, Error = NetworkErro
     let mut buff = BytesMut::with_capacity(message.encode_size() + 4);
 
     let mut writer = (&mut buff).writer();
-    header.write(&mut writer, T::KIND, T::IS_PROTOBUF)?;
+    write_header(header, &mut writer, T::KIND, T::IS_PROTOBUF)?;
     message.write_body(&mut writer)?;
 
     trace!("encoded message({} bytes): {:?}", buff.len(), buff.as_ref());

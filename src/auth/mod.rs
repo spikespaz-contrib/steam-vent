@@ -3,7 +3,6 @@ mod guard_data;
 
 use crate::connection::raw::RawConnection;
 use crate::connection::unauthenticated::service_method_un_authenticated;
-use crate::message::NetMessage;
 use crate::message::{MalformedBody, ServiceMethodMessage};
 use crate::net::NetworkError;
 use crate::session::{ConnectionError, LoginError};
@@ -16,8 +15,10 @@ use num_bigint_dig::BigUint;
 use num_traits::Num;
 use protobuf::{EnumOrUnknown, MessageField};
 use rsa::RsaPublicKey;
+use std::io::{Error as IoError, ErrorKind};
 use std::pin::pin;
 use std::time::Duration;
+use steam_vent_common::NetMessage;
 use steam_vent_crypto::encrypt_with_key_pkcs1;
 use steam_vent_proto_steam::enums::ESessionPersistence;
 use steam_vent_proto_steam::steammessages_auth_steamclient::CAuthentication_GetPasswordRSAPublicKey_Request;
@@ -279,7 +280,7 @@ async fn get_password_rsa(
             .map_err(|e| {
                 MalformedBody::new(
                     ServiceMethodMessage::<CAuthentication_GetPasswordRSAPublicKey_Request>::KIND,
-                    e,
+                    IoError::new(ErrorKind::InvalidData, e),
                 )
             })?;
     let key_exp =
@@ -287,13 +288,13 @@ async fn get_password_rsa(
             .map_err(|e| {
                 MalformedBody::new(
                     ServiceMethodMessage::<CAuthentication_GetPasswordRSAPublicKey_Request>::KIND,
-                    e,
+                    IoError::new(ErrorKind::InvalidData, e),
                 )
             })?;
     let key = RsaPublicKey::new(key_mod, key_exp).map_err(|e| {
         MalformedBody::new(
             ServiceMethodMessage::<CAuthentication_GetPasswordRSAPublicKey_Request>::KIND,
-            e,
+            IoError::new(ErrorKind::InvalidData, e),
         )
     })?;
     Ok((key, response.timestamp.unwrap_or_default()))

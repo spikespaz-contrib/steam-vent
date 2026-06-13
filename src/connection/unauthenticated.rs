@@ -1,15 +1,12 @@
+use super::Result;
 use super::raw::RawConnection;
-use super::{ReadonlyConnection, Result};
 use crate::auth::{
     AuthConfirmationHandler, GuardDataStore, begin_password_auth, perform_confirmation,
 };
 use crate::message::{ServiceMethodMessage, ServiceMethodResponseMessage};
-use crate::net::{NetMessageHeader, RawNetMessage};
-use crate::service_method::ServiceMethodRequest;
+use crate::net::RawNetMessage;
 use crate::session::{anonymous, login};
-use crate::{
-    Connection, ConnectionError, EResult, LoginError, NetMessage, NetworkError, ServerList,
-};
+use crate::{Connection, ConnectionError, EResult, LoginError, NetworkError, ServerList};
 use base64::Engine;
 use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use bytes::BytesMut;
@@ -17,6 +14,7 @@ use futures_util::Stream;
 use futures_util::{FutureExt, Sink};
 use serde::Deserialize;
 use std::future::Future;
+use steam_vent_common::{NetMessage, NetMessageHeader, ReadonlyConnection, ServiceMethodRequest};
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steamid_ng::{AccountType, SteamID};
 use thiserror::Error;
@@ -205,6 +203,8 @@ impl UnAuthenticatedConnection {
 
 /// Listen for messages before starting authentication
 impl ReadonlyConnection for UnAuthenticatedConnection {
+    type Error = NetworkError;
+
     fn on_notification<T: ServiceMethodRequest>(&self) -> impl Stream<Item = Result<T>> + 'static {
         BroadcastStream::new(self.0.filter.on_notification(T::REQ_NAME))
             .filter_map(|res| res.ok())

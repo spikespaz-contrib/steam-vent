@@ -12,6 +12,6 @@
   };
   outputs = {mill-scale, ...}:
     mill-scale ./. {
-      extraFiles = ["system.pem"];
+      extraPaths = [./crypto/system.pem];
     };
 }
