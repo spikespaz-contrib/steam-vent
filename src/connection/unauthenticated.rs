@@ -7,7 +7,9 @@ use crate::message::{ServiceMethodMessage, ServiceMethodResponseMessage};
 use crate::net::{NetMessageHeader, RawNetMessage};
 use crate::service_method::ServiceMethodRequest;
 use crate::session::{anonymous, login};
-use crate::{Connection, ConnectionError, LoginError, NetMessage, NetworkError, ServerList};
+use crate::{
+    Connection, ConnectionError, EResult, LoginError, NetMessage, NetworkError, ServerList,
+};
 use base64::Engine;
 use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use bytes::BytesMut;
@@ -125,8 +127,11 @@ impl UnAuthenticatedConnection {
             )
             .await
             {
+                None
+                | Some(Err(ConnectionError::Network(NetworkError::ApiError(
+                    EResult::TwoFactorCodeMismatch,
+                )))) => continue,
                 Some(result) => break result?,
-                None => continue,
             }
         };
 
