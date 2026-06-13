@@ -2,6 +2,7 @@ mod filter;
 pub(crate) mod raw;
 pub(crate) mod unauthenticated;
 
+use crate::GameCoordinator;
 use crate::auth::{AuthConfirmationHandler, GuardDataStore};
 use crate::message::{
     EncodableMessage, NetMessage, ServiceMethodMessage, ServiceMethodResponseMessage,
@@ -10,7 +11,6 @@ use crate::net::{NetMessageHeader, NetworkError, RawNetMessage};
 use crate::serverlist::ServerList;
 use crate::service_method::ServiceMethodRequest;
 use crate::session::{ConnectionError, Session};
-use crate::GameCoordinator;
 use async_stream::try_stream;
 pub(crate) use filter::MessageFilter;
 use futures_util::{FutureExt, Sink, SinkExt};

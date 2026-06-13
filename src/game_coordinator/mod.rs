@@ -2,7 +2,7 @@ pub mod handshake;
 
 use crate::connection::{ConnectionImpl, ConnectionTrait, MessageFilter, MessageSender};
 use crate::message::EncodableMessage;
-use crate::net::{decode_kind, JobId, NetMessageHeader, RawNetMessage};
+use crate::net::{JobId, NetMessageHeader, RawNetMessage, decode_kind};
 use crate::session::Session;
 use crate::{Connection, NetMessage, NetworkError};
 use futures_util::future::{Either, select};
@@ -10,17 +10,17 @@ use protobuf::Message;
 use std::fmt::{Debug, Formatter};
 use std::pin::pin;
 use std::time::Duration;
+use steam_vent_proto_common::{GCHandshake, MsgKindEnum, RpcMessage, RpcMessageWithKind};
 use steam_vent_proto_steam::enums_clientserver::EMsg;
-use steam_vent_proto_steam::steammessages_clientserver::cmsg_client_games_played::GamePlayed;
 use steam_vent_proto_steam::steammessages_clientserver::CMsgClientGamesPlayed;
+use steam_vent_proto_steam::steammessages_clientserver::cmsg_client_games_played::GamePlayed;
 use steam_vent_proto_steam::steammessages_clientserver_2::CMsgGCClient;
 use steam_vent_proto_steam::steammessages_clientserver_login::CMsgClientHello;
-use steam_vent_proto_common::{GCHandshake, MsgKindEnum, RpcMessage, RpcMessageWithKind};
 use tokio::spawn;
 use tokio::sync::mpsc::channel;
 use tokio::time::sleep;
-use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::debug;
 
 pub struct GameCoordinator {

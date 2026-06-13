@@ -6,11 +6,11 @@ use steam_vent::auth::{
     FileGuardDataStore,
 };
 use steam_vent::{Connection, ConnectionTrait, GenericGCHandshake, ServerList};
+use steam_vent_proto::RpcMessage;
 use steam_vent_proto::tf2::base_gcmessages::CSOEconItem;
 use steam_vent_proto::tf2::gcsdk_gcmessages::{
     CMsgSOCacheSubscribed, CMsgSOCacheSubscriptionRefresh,
 };
-use steam_vent_proto::RpcMessage;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

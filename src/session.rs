@@ -1,21 +1,21 @@
+use crate::NetMessage;
 use crate::auth::{ConfirmationError, ConfirmationMethod};
 use crate::connection::raw::RawConnection;
 use crate::connection::unauthenticated::AccessTokenError;
 use crate::connection::{ConnectionImpl, ConnectionTrait};
 use crate::eresult::EResult;
 use crate::net::{JobId, NetMessageHeader, NetworkError};
+use protobuf::MessageField;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+use steam_vent_crypto::CryptError;
 use steam_vent_proto_steam::steammessages_base::CMsgIPAddress;
+use steam_vent_proto_steam::steammessages_base::cmsg_ipaddress;
 use steam_vent_proto_steam::steammessages_clientserver_login::{
     CMsgClientHello, CMsgClientLogon, CMsgClientLogonResponse,
 };
-use crate::NetMessage;
-use protobuf::MessageField;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
-use steam_vent_crypto::CryptError;
-use steam_vent_proto_steam::steammessages_base::cmsg_ipaddress;
 use steamid_ng::{
     AccountType, Instance, InstanceFlags, InstanceType, SteamID, SteamIDParseError, Universe,
 };

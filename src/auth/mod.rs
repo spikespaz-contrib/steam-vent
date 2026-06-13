@@ -6,6 +6,17 @@ use crate::connection::unauthenticated::service_method_un_authenticated;
 use crate::message::NetMessage;
 use crate::message::{MalformedBody, ServiceMethodMessage};
 use crate::net::NetworkError;
+use crate::session::{ConnectionError, LoginError};
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
+pub use confirmation::*;
+pub use guard_data::*;
+use num_bigint_dig::BigUint;
+use num_traits::Num;
+use protobuf::{EnumOrUnknown, MessageField};
+use rsa::RsaPublicKey;
+use std::time::Duration;
+use steam_vent_crypto::encrypt_with_key_pkcs1;
 use steam_vent_proto_steam::enums::ESessionPersistence;
 use steam_vent_proto_steam::steammessages_auth_steamclient::CAuthentication_GetPasswordRSAPublicKey_Request;
 use steam_vent_proto_steam::steammessages_auth_steamclient::{
@@ -15,17 +26,6 @@ use steam_vent_proto_steam::steammessages_auth_steamclient::{
     CAuthentication_UpdateAuthSessionWithSteamGuardCode_Request, EAuthSessionGuardType,
     EAuthTokenPlatformType,
 };
-use crate::session::{ConnectionError, LoginError};
-use base64::prelude::BASE64_STANDARD;
-use base64::Engine;
-pub use confirmation::*;
-pub use guard_data::*;
-use num_bigint_dig::BigUint;
-use num_traits::Num;
-use protobuf::{EnumOrUnknown, MessageField};
-use rsa::RsaPublicKey;
-use std::time::Duration;
-use steam_vent_crypto::encrypt_with_key_pkcs1;
 use thiserror::Error;
 use tokio::time::sleep;
 use tracing::{debug, info, instrument};
@@ -159,6 +159,17 @@ impl StartedAuth {
 /// The token to send to steam to confirm the login
 #[derive(Debug)]
 pub struct SteamGuardToken(String);
+
+impl SteamGuardToken {
+    /// Construct a guard token from a raw one-time code (an email or device
+    /// code).
+    ///
+    /// This lets a custom confirmation handler construct tokens without access
+    /// to the tuple field.
+    pub fn new(code: impl Into<String>) -> Self {
+        Self(code.into())
+    }
+}
 
 pub(crate) struct PendingAuth {
     client_id: u64,

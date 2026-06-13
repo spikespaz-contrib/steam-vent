@@ -6,12 +6,12 @@ use steam_vent::auth::{
     AuthConfirmationHandler, ConsoleAuthConfirmationHandler, DeviceConfirmationHandler,
     FileGuardDataStore,
 };
-use steam_vent_proto::steammessages_friendmessages_steamclient::{
-    CFriendMessages_IncomingMessage_Notification, CFriendMessages_SendMessage_Request,
-};
 use steam_vent::{Connection, ConnectionTrait, ServerList};
 use steam_vent_proto::enums::EPersonaStateFlag;
 use steam_vent_proto::steammessages_clientserver_friends::CMsgClientChangeStatus;
+use steam_vent_proto::steammessages_friendmessages_steamclient::{
+    CFriendMessages_IncomingMessage_Notification, CFriendMessages_SendMessage_Request,
+};
 use steamid_ng::SteamID;
 use tokio::spawn;
 use tokio_stream::StreamExt;

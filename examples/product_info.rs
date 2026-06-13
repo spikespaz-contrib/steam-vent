@@ -1,9 +1,9 @@
 use std::error::Error;
-use steam_vent_proto::steammessages_clientserver_appinfo::{
-    cmsg_client_picsproduct_info_request, CMsgClientPICSProductInfoRequest,
-    CMsgClientPICSProductInfoResponse,
-};
 use steam_vent::{Connection, ConnectionTrait, ServerList};
+use steam_vent_proto::steammessages_clientserver_appinfo::{
+    CMsgClientPICSProductInfoRequest, CMsgClientPICSProductInfoResponse,
+    cmsg_client_picsproduct_info_request,
+};
 use vdf_reader::entry::Table;
 
 #[tokio::main]

@@ -1,6 +1,8 @@
 use super::raw::RawConnection;
 use super::{ReadonlyConnection, Result};
-use crate::auth::{AuthConfirmationHandler, GuardDataStore, begin_password_auth};
+use crate::auth::{
+    AuthConfirmationHandler, ConfirmationAction, GuardDataStore, begin_password_auth,
+};
 use crate::message::{ServiceMethodMessage, ServiceMethodResponseMessage};
 use crate::net::{NetMessageHeader, RawNetMessage};
 use crate::service_method::ServiceMethodRequest;
@@ -15,6 +17,7 @@ use futures_util::{FutureExt, Sink};
 use serde::Deserialize;
 use std::future::Future;
 use std::pin::pin;
+use std::time::Duration;
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steamid_ng::{AccountType, SteamID};
 use thiserror::Error;
@@ -47,6 +50,16 @@ pub enum AccessTokenError {
     #[error("{0:#}")]
     Json(#[from] serde_json::Error),
 }
+
+/// How long to wait for tokens after submitting a guard code before treating
+/// the attempt as rejected and re-prompting.
+///
+/// A correct code makes the next poll return tokens (well within one poll
+/// interval); a wrong code is accepted by the submit RPC but never yields
+/// tokens, so it manifests only as the absence of a response. Bounding the wait
+/// turns that silence into a retry signal, while staying generous enough that a
+/// correct code on a slow link is never misread as a rejection.
+const RETRY_POLL_TIMEOUT_SECS: u64 = 30;
 
 /// A Connection that hasn't been authentication yet
 pub struct UnAuthenticatedConnection(RawConnection);
@@ -101,7 +114,7 @@ impl UnAuthenticatedConnection {
         account: &str,
         password: &str,
         mut guard_data_store: G,
-        confirmation_handler: H,
+        mut confirmation_handler: H,
     ) -> Result<Connection, ConnectionError> {
         let mut raw = self.0;
         let guard_data = guard_data_store.load(account).await.unwrap_or_else(|e| {
@@ -116,25 +129,38 @@ impl UnAuthenticatedConnection {
 
         let allowed_confirmations = begin.allowed_confirmations();
 
-        let tokens = match select(
-            pin!(confirmation_handler.handle_confirmation(&allowed_confirmations)),
-            pin!(begin.poll().wait_for_tokens(&raw)),
-        )
-        .await
-        {
-            Either::Left((confirmation_action, tokens_fut)) => {
-                if let Some(confirmation_action) = confirmation_action {
+        let tokens = loop {
+            match select(
+                pin!(confirmation_handler.handle_confirmation(&allowed_confirmations)),
+                pin!(begin.poll().wait_for_tokens(&raw)),
+            )
+            .await
+            {
+                Either::Left((confirmation_action, tokens_fut)) => {
+                    let Some(confirmation_action) = confirmation_action else {
+                        if begin.action_required() {
+                            return Err(ConnectionError::UnsupportedConfirmationAction(
+                                allowed_confirmations.clone(),
+                            ));
+                        }
+                        break tokens_fut.await?;
+                    };
+                    let retry_on_timeout =
+                        matches!(confirmation_action, ConfirmationAction::GuardToken(..));
                     begin.submit_confirmation(&raw, confirmation_action).await?;
-                    tokens_fut.await?
-                } else if begin.action_required() {
-                    return Err(ConnectionError::UnsupportedConfirmationAction(
-                        allowed_confirmations.clone(),
-                    ));
-                } else {
-                    tokens_fut.await?
+                    if retry_on_timeout {
+                        match timeout(Duration::from_secs(RETRY_POLL_TIMEOUT_SECS), tokens_fut)
+                            .await
+                        {
+                            Ok(tokens) => break tokens?,
+                            Err(_) => continue,
+                        }
+                    } else {
+                        break tokens_fut.await?;
+                    }
                 }
+                Either::Right((tokens, _)) => break tokens?,
             }
-            Either::Right((tokens, _)) => tokens?,
         };
 
         if let Some(guard_data) = tokens.new_guard_data

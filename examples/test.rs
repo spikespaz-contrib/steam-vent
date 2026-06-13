@@ -1,6 +1,6 @@
 use std::error::Error;
-use steam_vent_proto::steammessages_gameservers_steamclient::CGameServers_GetServerList_Request;
 use steam_vent::{Connection, ConnectionTrait, ServerList};
+use steam_vent_proto::steammessages_gameservers_steamclient::CGameServers_GetServerList_Request;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
