@@ -10,11 +10,13 @@ use crate::session::{ConnectionError, LoginError};
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 pub use confirmation::*;
+use futures_util::future::{Either, select};
 pub use guard_data::*;
 use num_bigint_dig::BigUint;
 use num_traits::Num;
 use protobuf::{EnumOrUnknown, MessageField};
 use rsa::RsaPublicKey;
+use std::pin::pin;
 use std::time::Duration;
 use steam_vent_crypto::encrypt_with_key_pkcs1;
 use steam_vent_proto_steam::enums::ESessionPersistence;
@@ -27,7 +29,7 @@ use steam_vent_proto_steam::steammessages_auth_steamclient::{
     EAuthTokenPlatformType,
 };
 use thiserror::Error;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use tracing::{debug, info, instrument};
 
 pub(crate) async fn begin_password_auth(
@@ -295,4 +297,54 @@ async fn get_password_rsa(
         )
     })?;
     Ok((key, response.timestamp.unwrap_or_default()))
+}
+
+/// How long to wait for tokens after submitting a guard code before treating
+/// the attempt as rejected and re-prompting.
+///
+/// A correct code makes the next poll return tokens (well within one poll
+/// interval); a wrong code is accepted by the submit RPC but never yields
+/// tokens, so it manifests only as the absence of a response. Bounding the wait
+/// turns that silence into a retry signal, while staying generous enough that a
+/// correct code on a slow link is never misread as a rejection.
+const RETRY_POLL_TIMEOUT_SECS: u64 = 30;
+
+pub(crate) async fn perform_confirmation<C: AuthConfirmationHandler>(
+    raw: &RawConnection,
+    confirmation_handler: &mut C,
+    begin: &StartedAuth,
+    allowed_confirmations: &[ConfirmationMethod],
+) -> Option<Result<Tokens, ConnectionError>> {
+    let pending = begin.poll();
+    match select(
+        pin!(confirmation_handler.handle_confirmation(allowed_confirmations)),
+        pin!(pending.wait_for_tokens(raw)),
+    )
+    .await
+    {
+        Either::Left((confirmation_action, tokens_fut)) => {
+            let Some(confirmation_action) = confirmation_action else {
+                if begin.action_required() {
+                    return Some(Err(ConnectionError::UnsupportedConfirmationAction(
+                        allowed_confirmations.into(),
+                    )));
+                }
+                return Some(tokens_fut.await.map_err(ConnectionError::from));
+            };
+            let retry_on_timeout =
+                matches!(confirmation_action, ConfirmationAction::GuardToken(..));
+            if let Err(e) = begin.submit_confirmation(raw, confirmation_action).await {
+                return Some(Err(e.into()));
+            };
+            if retry_on_timeout {
+                match timeout(Duration::from_secs(RETRY_POLL_TIMEOUT_SECS), tokens_fut).await {
+                    Ok(tokens) => Some(tokens.map_err(ConnectionError::from)),
+                    Err(_) => None,
+                }
+            } else {
+                Some(tokens_fut.await.map_err(ConnectionError::from))
+            }
+        }
+        Either::Right((tokens, _)) => Some(tokens.map_err(ConnectionError::from)),
+    }
 }
