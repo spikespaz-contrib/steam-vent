@@ -1,8 +1,7 @@
 use std::env::args;
 use std::error::Error;
 use steam_vent::auth::{
-    AuthConfirmationHandler, ConsoleAuthConfirmationHandler, DeviceConfirmationHandler,
-    FileGuardDataStore,
+    ConsoleAuthConfirmationHandler, DeviceConfirmationHandler, FileGuardDataStore,
 };
 use steam_vent::{Connection, ConnectionTrait, ServerList};
 use steam_vent_proto::steammessages_player_steamclient::CPlayer_GetOwnedGames_Request;
@@ -37,7 +36,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             &account,
             &password,
             FileGuardDataStore::user_cache(),
-            ConsoleAuthConfirmationHandler::default().or(DeviceConfirmationHandler),
+            (
+                ConsoleAuthConfirmationHandler::default(),
+                DeviceConfirmationHandler,
+            ),
         )
         .await?;
 

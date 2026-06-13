@@ -24,7 +24,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &account,
         &password,
         FileGuardDataStore::user_cache(),
-        ConsoleAuthConfirmationHandler::default().or(DeviceConfirmationHandler),
+        (
+            ConsoleAuthConfirmationHandler::default(),
+            DeviceConfirmationHandler,
+        ),
     )
     .await?;
 

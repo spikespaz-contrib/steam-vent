@@ -140,7 +140,7 @@ impl From<GuardTokenType> for EAuthSessionGuardType {
 /// - Waiting for the user to confirm the login from the mobile app: [`DeviceConfirmationHandler`].
 ///
 /// Additionally, apps can implement the trait to integrate the confirmation flow into the app.
-pub trait AuthConfirmationHandler: Sized {
+pub trait AuthConfirmationHandler {
     /// Perform the confirmation action given a list of allowed confirmations for the login
     ///
     /// If the confirmation handler supports any of the allowed confirmations,
@@ -152,16 +152,6 @@ pub trait AuthConfirmationHandler: Sized {
         &mut self,
         allowed_confirmations: &[ConfirmationMethod],
     ) -> impl std::future::Future<Output = Option<ConfirmationAction>> + Send;
-
-    /// Return a new confirmation handler that combines the current one with a new one.
-    ///
-    /// The resulting confirmation handler will handle both handler in parallel.
-    fn or<Right: AuthConfirmationHandler>(
-        self,
-        other: Right,
-    ) -> EitherConfirmationHandler<Self, Right> {
-        EitherConfirmationHandler::new(self, other)
-    }
 }
 
 /// Ask the user for the totp token from the terminal
@@ -285,22 +275,7 @@ impl AuthConfirmationHandler for DeviceConfirmationHandler {
     }
 }
 
-/// Use multiple confirmation handlers in parallel.
-///
-/// This is primarily usefully for allowing users to pick between providing a totp code or confirming
-/// the login in the mobile app.
-pub struct EitherConfirmationHandler<Left, Right> {
-    left: Left,
-    right: Right,
-}
-
-impl<Left, Right> EitherConfirmationHandler<Left, Right> {
-    pub fn new(left: Left, right: Right) -> Self {
-        Self { left, right }
-    }
-}
-
-impl<Left, Right> AuthConfirmationHandler for EitherConfirmationHandler<Left, Right>
+impl<Left, Right> AuthConfirmationHandler for (Left, Right)
 where
     Left: AuthConfirmationHandler + Send + Sync,
     Right: AuthConfirmationHandler + Send + Sync,
@@ -310,8 +285,8 @@ where
         allowed_confirmations: &[ConfirmationMethod],
     ) -> Option<ConfirmationAction> {
         match select(
-            pin!(self.left.handle_confirmation(allowed_confirmations)),
-            pin!(self.right.handle_confirmation(allowed_confirmations)),
+            pin!(self.0.handle_confirmation(allowed_confirmations)),
+            pin!(self.1.handle_confirmation(allowed_confirmations)),
         )
         .await
         {

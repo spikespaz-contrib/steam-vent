@@ -5,8 +5,7 @@ use std::env::args;
 use std::error::Error;
 use steam_vent::ServerList;
 use steam_vent::auth::{
-    AuthConfirmationHandler, ConsoleAuthConfirmationHandler, DeviceConfirmationHandler,
-    FileGuardDataStore,
+    ConsoleAuthConfirmationHandler, DeviceConfirmationHandler, FileGuardDataStore,
 };
 use steam_vent::connection::{ReadonlyConnection, UnAuthenticatedConnection};
 use steam_vent_proto::steammessages_clientserver::CMsgClientGameConnectTokens;
@@ -28,7 +27,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             &account,
             &password,
             FileGuardDataStore::user_cache(),
-            ConsoleAuthConfirmationHandler::default().or(DeviceConfirmationHandler),
+            (
+                ConsoleAuthConfirmationHandler::default(),
+                DeviceConfirmationHandler,
+            ),
         )
         .await?;
 
