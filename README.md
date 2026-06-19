@@ -86,6 +86,10 @@ Game-specific probufs are packaged for the following games:
 They can be used by either enabling the features in `steam-vent-proto` or by
 depending on the protobuf package directly.
 
+## Contribution guidelines
+
+LLM driven contributions are not welcome in this project.
+
 ## Credit
 
 This is in large parts inspired by and based of
