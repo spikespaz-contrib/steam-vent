@@ -81,6 +81,7 @@ Game-specific probufs are packaged for the following games:
 - [tf2](https://codeberg.org/steam-vent/proto-tf2)
 - [csgo](https://codeberg.org/steam-vent/proto-csgo)
 - [dota2](https://codeberg.org/steam-vent/proto-dota2)
+- [deadlock](https://codeberg.org/steam-vent/proto-deadlock)
 
 They can be used by either enabling the features in `steam-vent-proto` or by
 depending on the protobuf package directly.
