@@ -5,7 +5,7 @@ use futures_util::Stream;
 use std::collections::VecDeque;
 use std::pin::pin;
 use std::sync::{Arc, Mutex};
-use steam_vent_common::JobId;
+use steam_vent_core::JobId;
 use steam_vent_proto_common::MsgKind;
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use tokio::spawn;

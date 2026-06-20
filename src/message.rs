@@ -13,7 +13,7 @@ use protobuf::Message;
 use std::io::Error as IoError;
 use std::io::{Cursor, Read, Write};
 use std::{fmt::Debug, io::ErrorKind};
-use steam_vent_common::{
+use steam_vent_core::{
     DecodableMessage, EncodableMessage, NetMessageHeader, ReceivableMessage, SendableMessage,
     ServiceMethodRequest, ServiceNotification,
 };

@@ -9,7 +9,7 @@ use futures_util::future::ready;
 use futures_util::{Sink, SinkExt, StreamExt, TryStreamExt};
 use std::convert::TryInto;
 use std::fmt::Debug;
-use steam_vent_common::{NetMessageHeader, SendableMessage};
+use steam_vent_core::{NetMessageHeader, SendableMessage};
 use steam_vent_crypto::{
     generate_session_key, symmetric_decrypt, symmetric_encrypt_with_iv_buffer,
 };

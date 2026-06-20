@@ -11,7 +11,7 @@ use std::fmt::{Debug, Formatter};
 use std::future::ready;
 use std::sync::Arc;
 use std::time::Duration;
-use steam_vent_common::{EncodableMessage, NetMessageHeader, RawSteamId};
+use steam_vent_core::{EncodableMessage, NetMessageHeader, RawSteamId};
 use steam_vent_proto_common::MsgKindEnum;
 use steam_vent_proto_steam::steammessages_clientserver_login::CMsgClientHeartBeat;
 use tokio::sync::Mutex;

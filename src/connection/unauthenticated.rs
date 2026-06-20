@@ -14,7 +14,7 @@ use futures_util::Stream;
 use futures_util::{FutureExt, Sink};
 use serde::Deserialize;
 use std::future::Future;
-use steam_vent_common::{
+use steam_vent_core::{
     NetMessageHeader, ReadonlyConnection, ReceivableMessage, ServiceMethodRequest,
     ServiceNotification,
 };

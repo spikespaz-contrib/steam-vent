@@ -17,8 +17,8 @@ use std::future::Future;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
-pub use steam_vent_common::{ConnectionTrait, ReadonlyConnection};
-use steam_vent_common::{
+pub use steam_vent_core::{ConnectionTrait, ReadonlyConnection};
+use steam_vent_core::{
     EncodableMessage, NetMessageHeader, ReceivableMessage, SendableMessage, ServiceMethodRequest,
     ServiceNotification,
 };

@@ -11,7 +11,7 @@ rust-version = "1.88.0"
 [dependencies]
 steam-vent-proto-common = "0.5.1"
 steam-vent-proto-steam = "0.5.2"
-steam-vent-common = { version = "0.1", path = "./common" }
+steam-vent-core = { version = "0.1", path = "./core" }
 steam-vent-crypto = { version = "0.2", path = "./crypto" }
 tokio = { version = "1.47.1", features = ["net", "io-util", "macros", "io-std"] }
 tokio-util = { version = "0.7.16", features = ["codec"] }

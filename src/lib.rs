@@ -14,7 +14,7 @@ pub use game_coordinator::{GameCoordinator, handshake::GenericGCHandshake};
 pub use net::{NetworkError, RawNetMessage};
 pub use serverlist::{DiscoverOptions, ServerDiscoveryError, ServerList};
 pub use session::{ConnectionError, LoginError};
-pub use steam_vent_common::{
+pub use steam_vent_core::{
     ConnectionTrait, NetMessageHeader, ReadonlyConnection, ReceivableMessage, SendableMessage,
     ServiceMethodRequest,
 };

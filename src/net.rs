@@ -6,7 +6,7 @@ use protobuf::Message;
 use std::fmt::Debug;
 use std::io::Error as IoError;
 use std::io::{Cursor, Seek, SeekFrom};
-use steam_vent_common::{
+use steam_vent_core::{
     EncodableMessage, JobId, NetMessageHeader, RawSteamId, ReceivableMessage, SendableMessage,
 };
 use steam_vent_crypto::CryptError;

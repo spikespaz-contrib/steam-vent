@@ -9,7 +9,7 @@ use protobuf::Message;
 use std::fmt::{Debug, Formatter};
 use std::pin::pin;
 use std::time::Duration;
-use steam_vent_common::{
+use steam_vent_core::{
     ConnectionTrait, EncodableMessage, JobId, NetMessageHeader, ReceivableMessage, SendableMessage,
 };
 use steam_vent_proto_common::{GCHandshake, MsgKindEnum, RpcMessage, RpcMessageWithKind};
