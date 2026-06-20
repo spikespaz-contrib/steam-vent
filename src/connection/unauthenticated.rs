@@ -16,6 +16,7 @@ use serde::Deserialize;
 use std::future::Future;
 use steam_vent_common::{
     NetMessageHeader, ReadonlyConnection, ReceivableMessage, ServiceMethodRequest,
+    ServiceNotification,
 };
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steamid_ng::{AccountType, SteamID};
@@ -207,8 +208,8 @@ impl UnAuthenticatedConnection {
 impl ReadonlyConnection for UnAuthenticatedConnection {
     type Error = NetworkError;
 
-    fn on_notification<T: ServiceMethodRequest>(&self) -> impl Stream<Item = Result<T>> + 'static {
-        BroadcastStream::new(self.0.filter.on_notification(T::REQ_NAME))
+    fn on_notification<T: ServiceNotification>(&self) -> impl Stream<Item = Result<T>> + 'static {
+        BroadcastStream::new(self.0.filter.on_notification(T::NOTIFICATION_NAME))
             .filter_map(|res| res.ok())
             .map(|raw| raw.into_notification())
     }

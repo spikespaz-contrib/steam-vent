@@ -19,10 +19,12 @@
 
 #### Messages
 
-- The `EncodableMessage` traits has been split op into `DecodableMessage` and
+- The `EncodableMessage` trait has been split op into `DecodableMessage` and
   `EncodableMessage` traits.
-- The `NetMessage` traits has been split op into `SendableMessage` and
+- The `NetMessage` trait has been split op into `SendableMessage` and
   `ReceivableMessage` traits.
+- The `ServiceMethodRequest` trait has been split op into `ServiceMethodRequest`
+  and `ServiceNotification` traits.
 
 ### Changes
 

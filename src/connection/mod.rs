@@ -20,6 +20,7 @@ use std::time::Duration;
 pub use steam_vent_common::{ConnectionTrait, ReadonlyConnection};
 use steam_vent_common::{
     EncodableMessage, NetMessageHeader, ReceivableMessage, SendableMessage, ServiceMethodRequest,
+    ServiceNotification,
 };
 use steam_vent_proto_common::{GCHandshake, JobMultiple, MsgKindEnum};
 use steamid_ng::SteamID;
@@ -237,10 +238,10 @@ macro_rules! impl_connection {
         impl ConnectionTrait for $con {
             type Error = NetworkError;
 
-            fn on_notification<T: ServiceMethodRequest>(
+            fn on_notification<T: ServiceNotification>(
                 &self,
             ) -> impl Stream<Item = Result<T>> + 'static {
-                BroadcastStream::new(self.filter().on_notification(T::REQ_NAME))
+                BroadcastStream::new(self.filter().on_notification(T::NOTIFICATION_NAME))
                     .filter_map(|res| res.ok())
                     .map(|raw| raw.into_notification())
             }

@@ -1,4 +1,6 @@
-use crate::{NetMessageHeader, ReceivableMessage, SendableMessage, ServiceMethodRequest};
+use crate::{
+    NetMessageHeader, ReceivableMessage, SendableMessage, ServiceMethodRequest, ServiceNotification,
+};
 use steam_vent_proto_common::JobMultiple;
 use tokio_stream::Stream;
 
@@ -6,7 +8,7 @@ use tokio_stream::Stream;
 pub trait ReadonlyConnection {
     type Error;
 
-    fn on_notification<T: ServiceMethodRequest>(
+    fn on_notification<T: ServiceNotification>(
         &self,
     ) -> impl Stream<Item = Result<T, Self::Error>> + 'static;
 
@@ -36,7 +38,7 @@ pub trait ConnectionTrait {
     type Error;
 
     /// Listen for notification messages from steam
-    fn on_notification<T: ServiceMethodRequest>(
+    fn on_notification<T: ServiceNotification>(
         &self,
     ) -> impl Stream<Item = Result<T, Self::Error>> + 'static;
 
