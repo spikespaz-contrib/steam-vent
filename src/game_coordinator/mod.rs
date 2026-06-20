@@ -3,13 +3,15 @@ pub mod handshake;
 use crate::connection::{ConnectionImpl, MessageFilter, MessageSender};
 use crate::net::{RawNetMessage, decode_kind, header_encode_size, write_header};
 use crate::session::Session;
-use crate::{Connection, NetMessage, NetworkError};
+use crate::{Connection, NetworkError};
 use futures_util::future::{Either, select};
 use protobuf::Message;
 use std::fmt::{Debug, Formatter};
 use std::pin::pin;
 use std::time::Duration;
-use steam_vent_common::{ConnectionTrait, EncodableMessage, JobId, NetMessageHeader};
+use steam_vent_common::{
+    ConnectionTrait, EncodableMessage, JobId, NetMessageHeader, ReceivableMessage, SendableMessage,
+};
 use steam_vent_proto_common::{GCHandshake, MsgKindEnum, RpcMessage, RpcMessageWithKind};
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steam_vent_proto_steam::steammessages_clientserver::CMsgClientGamesPlayed;
@@ -85,7 +87,7 @@ impl GameCoordinator {
     }
 
     /// Create new `GameCoordinator` instance returning the received welcome message.
-    pub async fn with_welcome<Welcome: NetMessage>(
+    pub async fn with_welcome<Welcome: ReceivableMessage>(
         connection: &Connection,
         app_id: u32,
     ) -> Result<(Self, Welcome), NetworkError> {
@@ -103,7 +105,7 @@ impl GameCoordinator {
         Ok((gc, welcome.into_message()?))
     }
 
-    async fn init_raw<HelloMsg: NetMessage, HelloFn: Fn() -> HelloMsg>(
+    async fn init_raw<HelloMsg: SendableMessage, HelloFn: Fn() -> HelloMsg>(
         connection: &Connection,
         app_id: u32,
         hello_msg: HelloFn,
@@ -133,15 +135,18 @@ impl GameCoordinator {
         };
 
         connection
-            .send_with_kind(
+            .send(
                 CMsgClientGamesPlayed {
                     games_played: vec![GamePlayed {
                         game_id: Some(app_id as u64),
                         ..Default::default()
                     }],
                     ..Default::default()
-                },
-                EMsg::k_EMsgClientGamesPlayedWithDataBlob,
+                }
+                .with_kind(
+                    EMsg::k_EMsgClientGamesPlayedWithDataBlob,
+                    CMsgClientGamesPlayed::IS_PROTOBUF,
+                ),
             )
             .await?;
 
@@ -164,15 +169,17 @@ impl GameCoordinator {
         Ok((gc, welcome))
     }
 
-    async fn send_hello<HelloMsg: NetMessage, HelloFn: Fn() -> HelloMsg>(
+    async fn send_hello<HelloMsg: SendableMessage, HelloFn: Fn() -> HelloMsg>(
         &self,
         hello_fn: HelloFn,
     ) -> Result<(), NetworkError> {
+        let hello = hello_fn();
+        let is_protobuf = hello.is_protobuf();
         if self.session.is_server() {
-            self.send_with_kind(hello_fn(), GCMsgKind::k_EMsgGCServerHello)
+            self.send(hello.with_kind(GCMsgKind::k_EMsgGCServerHello, is_protobuf))
                 .await?;
         } else {
-            self.send_with_kind(hello_fn(), GCMsgKind::k_EMsgGCClientHello)
+            self.send(hello.with_kind(GCMsgKind::k_EMsgGCClientHello, is_protobuf))
                 .await?;
         }
         Ok(())

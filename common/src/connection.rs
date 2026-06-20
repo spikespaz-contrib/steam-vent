@@ -1,4 +1,4 @@
-use crate::{message::NetMessage, net::NetMessageHeader, service_method::ServiceMethodRequest};
+use crate::{NetMessageHeader, ReceivableMessage, SendableMessage, ServiceMethodRequest};
 use steam_vent_proto_common::JobMultiple;
 use tokio_stream::Stream;
 
@@ -11,22 +11,24 @@ pub trait ReadonlyConnection {
     ) -> impl Stream<Item = Result<T, Self::Error>> + 'static;
 
     /// Wait for one message of a specific kind, also returning the header
-    fn one_with_header<T: NetMessage + 'static>(
+    fn one_with_header<T: ReceivableMessage + 'static>(
         &self,
     ) -> impl Future<Output = Result<(NetMessageHeader, T), Self::Error>> + 'static;
 
     /// Wait for one message of a specific kind
-    fn one<T: NetMessage + 'static>(
+    fn one<T: ReceivableMessage + 'static>(
         &self,
     ) -> impl Future<Output = Result<T, Self::Error>> + 'static;
 
     /// Listen to messages of a specific kind, also returning the header
-    fn on_with_header<T: NetMessage + 'static>(
+    fn on_with_header<T: ReceivableMessage + 'static>(
         &self,
     ) -> impl Stream<Item = Result<(NetMessageHeader, T), Self::Error>> + 'static;
 
     /// Listen to messages of a specific kind
-    fn on<T: NetMessage + 'static>(&self) -> impl Stream<Item = Result<T, Self::Error>> + 'static;
+    fn on<T: ReceivableMessage + 'static>(
+        &self,
+    ) -> impl Stream<Item = Result<T, Self::Error>> + 'static;
 }
 
 /// A trait for sending messages to steam
@@ -39,12 +41,14 @@ pub trait ConnectionTrait {
     ) -> impl Stream<Item = Result<T, Self::Error>> + 'static;
 
     /// Wait for one message of a specific kind
-    fn one<T: NetMessage + 'static>(
+    fn one<T: ReceivableMessage + 'static>(
         &self,
     ) -> impl Future<Output = Result<T, Self::Error>> + 'static;
 
     /// Listen to messages of a specific kind
-    fn on<T: NetMessage + 'static>(&self) -> impl Stream<Item = Result<T, Self::Error>> + 'static;
+    fn on<T: ReceivableMessage + 'static>(
+        &self,
+    ) -> impl Stream<Item = Result<T, Self::Error>> + 'static;
 
     /// Send a rpc-request to steam, waiting for the matching rpc-response
     fn service_method<Msg: ServiceMethodRequest>(
@@ -53,19 +57,19 @@ pub trait ConnectionTrait {
     ) -> impl Future<Output = Result<Msg::Response, Self::Error>> + Send;
 
     /// Send a message to steam, waiting for a response with the same job id
-    fn job<Msg: NetMessage, Rsp: NetMessage>(
+    fn job<Req: SendableMessage, Rsp: ReceivableMessage>(
         &self,
-        msg: Msg,
+        msg: Req,
     ) -> impl Future<Output = Result<Rsp, Self::Error>> + Send;
 
     /// Send a message to steam, receiving responses until the response marks that the response is complete
-    fn job_multi<Msg: NetMessage, Rsp: NetMessage + JobMultiple>(
+    fn job_multi<Req: SendableMessage, Rsp: ReceivableMessage + JobMultiple>(
         &self,
-        msg: Msg,
+        msg: Req,
     ) -> impl Stream<Item = Result<Rsp, Self::Error>> + Send;
 
     /// Send a message to steam without waiting for a response
-    fn send<Msg: NetMessage>(
+    fn send<Msg: SendableMessage>(
         &self,
         msg: Msg,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;

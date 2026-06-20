@@ -18,7 +18,7 @@ use rsa::RsaPublicKey;
 use std::io::{Error as IoError, ErrorKind};
 use std::pin::pin;
 use std::time::Duration;
-use steam_vent_common::NetMessage;
+use steam_vent_common::ReceivableMessage;
 use steam_vent_crypto::encrypt_with_key_pkcs1;
 use steam_vent_proto_steam::enums::ESessionPersistence;
 use steam_vent_proto_steam::steammessages_auth_steamclient::CAuthentication_GetPasswordRSAPublicKey_Request;

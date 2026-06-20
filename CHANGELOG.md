@@ -17,6 +17,13 @@
   `send_with_kind`, `raw_send` and `raw_send_with_kind` have been removed from
   the `ConnectionTrait` in order to trim the public api.
 
+#### Messages
+
+- The `EncodableMessage` traits has been split op into `DecodableMessage` and
+  `EncodableMessage` traits.
+- The `NetMessage` traits has been split op into `SendableMessage` and
+  `ReceivableMessage` traits.
+
 ### Changes
 
 - Steam guard confirmation now retries when an incorrect token is provided,

@@ -9,7 +9,7 @@ use futures_util::future::ready;
 use futures_util::{Sink, SinkExt, StreamExt, TryStreamExt};
 use std::convert::TryInto;
 use std::fmt::Debug;
-use steam_vent_common::{NetMessage, NetMessageHeader};
+use steam_vent_common::{NetMessageHeader, SendableMessage};
 use steam_vent_crypto::{
     generate_session_key, symmetric_decrypt, symmetric_encrypt_with_iv_buffer,
 };
@@ -135,7 +135,7 @@ impl Encoder<RawNetMessage> for RawMessageEncoder {
 }
 
 /// Write a message to a Sink
-pub async fn encode_message<T: NetMessage, S: Sink<BytesMut, Error = NetworkError> + Unpin>(
+pub async fn encode_message<T: SendableMessage, S: Sink<BytesMut, Error = NetworkError> + Unpin>(
     header: &NetMessageHeader,
     message: &T,
     dst: &mut S,
@@ -143,7 +143,7 @@ pub async fn encode_message<T: NetMessage, S: Sink<BytesMut, Error = NetworkErro
     let mut buff = BytesMut::with_capacity(message.encode_size() + 4);
 
     let mut writer = (&mut buff).writer();
-    write_header(header, &mut writer, T::KIND, T::IS_PROTOBUF)?;
+    write_header(header, &mut writer, message.kind(), message.is_protobuf())?;
     message.write_body(&mut writer)?;
 
     trace!("encoded message({} bytes): {:?}", buff.len(), buff.as_ref());
