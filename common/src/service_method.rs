@@ -1,7 +1,14 @@
 use std::fmt::Debug;
 use std::io::{Error, Read, Result, Write};
-use steam_vent_proto_common::{protobuf::Message, RpcMessage, RpcMethod};
+use steam_vent_proto_common::{RpcMessage, RpcMethod, protobuf::Message};
 
+/// A service method message which returns a typed response
+///
+/// Service methods have an associated response type,
+/// sending a service method with [`service_method`] will
+/// automatically wait for the matching response from the connection and return it.
+///
+/// [`service_method`]: `crate::ConnectionTrait::service_method`
 pub trait ServiceMethodRequest: Debug + Message {
     const REQ_NAME: &'static str;
     type Response: RpcMessage;

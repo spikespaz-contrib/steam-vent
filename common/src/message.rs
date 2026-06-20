@@ -11,12 +11,15 @@ use tracing::trace;
 /// To send messasages that implement this trait but not [`SendableMessage`], use [`EncodableMessage::with_kind`] to specify the kind of the message at runtime.
 pub trait EncodableMessage: Sized + Debug + Send {
     /// Encode the message
-    fn write_body<W: Write>(&self, _writer: W) -> Result<(), IoError>;
+    fn write_body<W: Write>(&self, writer: W) -> Result<(), IoError>;
 
     /// How many bytes are required to encode the message
     fn encode_size(&self) -> usize;
 
     /// Perform pre-processing on a header before sending
+    ///
+    /// This allows messages to customize the header that is being send with it.
+    /// The primary usecase for this is setting the job name for [`ServiceMethodRequest`s][crate::ServiceMethodRequest].
     fn process_header(&self, _header: &mut NetMessageHeader) {}
 
     /// Override the kind of the message at runtime
@@ -32,7 +35,7 @@ pub trait EncodableMessage: Sized + Debug + Send {
 /// A message which can be decoded
 pub trait DecodableMessage: Sized + Debug + Send {
     /// Read and decode the message
-    fn read_body(_data: BytesMut, _header: &NetMessageHeader) -> Result<Self, IoError>;
+    fn read_body(data: BytesMut, header: &NetMessageHeader) -> Result<Self, IoError>;
 }
 
 /// A message that can be send over a connection.
