@@ -14,7 +14,10 @@ use futures_util::Stream;
 use futures_util::{FutureExt, Sink};
 use serde::Deserialize;
 use std::future::Future;
-use steam_vent_common::{NetMessage, NetMessageHeader, ReadonlyConnection, ServiceMethodRequest};
+use steam_vent_core::{
+    NetMessageHeader, ReadonlyConnection, ReceivableMessage, ServiceMethodRequest,
+    ServiceNotification,
+};
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steamid_ng::{AccountType, SteamID};
 use thiserror::Error;
@@ -205,13 +208,13 @@ impl UnAuthenticatedConnection {
 impl ReadonlyConnection for UnAuthenticatedConnection {
     type Error = NetworkError;
 
-    fn on_notification<T: ServiceMethodRequest>(&self) -> impl Stream<Item = Result<T>> + 'static {
-        BroadcastStream::new(self.0.filter.on_notification(T::REQ_NAME))
+    fn on_notification<T: ServiceNotification>(&self) -> impl Stream<Item = Result<T>> + 'static {
+        BroadcastStream::new(self.0.filter.on_notification(T::NOTIFICATION_NAME))
             .filter_map(|res| res.ok())
             .map(|raw| raw.into_notification())
     }
 
-    fn one_with_header<T: NetMessage + 'static>(
+    fn one_with_header<T: ReceivableMessage + 'static>(
         &self,
     ) -> impl Future<Output = Result<(NetMessageHeader, T)>> + 'static {
         // async block instead of async fn, so we don't have to tie the lifetime of the returned future
@@ -223,12 +226,12 @@ impl ReadonlyConnection for UnAuthenticatedConnection {
         }
     }
 
-    fn one<T: NetMessage + 'static>(&self) -> impl Future<Output = Result<T>> + 'static {
+    fn one<T: ReceivableMessage + 'static>(&self) -> impl Future<Output = Result<T>> + 'static {
         self.one_with_header::<T>()
             .map(|res| res.map(|(_, msg)| msg))
     }
 
-    fn on_with_header<T: NetMessage + 'static>(
+    fn on_with_header<T: ReceivableMessage + 'static>(
         &self,
     ) -> impl Stream<Item = Result<(NetMessageHeader, T)>> + 'static {
         BroadcastStream::new(self.0.filter.on_kind(T::KIND)).map(|raw| {
@@ -237,7 +240,7 @@ impl ReadonlyConnection for UnAuthenticatedConnection {
         })
     }
 
-    fn on<T: NetMessage + 'static>(&self) -> impl Stream<Item = Result<T>> + 'static {
+    fn on<T: ReceivableMessage + 'static>(&self) -> impl Stream<Item = Result<T>> + 'static {
         self.on_with_header::<T>()
             .map(|res| res.map(|(_, msg)| msg))
     }

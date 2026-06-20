@@ -1986,7 +1986,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "steam-vent-common",
+ "steam-vent-core",
  "steam-vent-crypto",
  "steam-vent-proto",
  "steam-vent-proto-common",
@@ -2004,7 +2004,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "steam-vent-common"
+name = "steam-vent-core"
 version = "0.1.0"
 dependencies = [
  "bytes",

@@ -6,7 +6,9 @@ use protobuf::Message;
 use std::fmt::Debug;
 use std::io::Error as IoError;
 use std::io::{Cursor, Seek, SeekFrom};
-use steam_vent_common::{EncodableMessage, JobId, NetMessage, NetMessageHeader, RawSteamId};
+use steam_vent_core::{
+    EncodableMessage, JobId, NetMessageHeader, RawSteamId, ReceivableMessage, SendableMessage,
+};
 use steam_vent_crypto::CryptError;
 use steam_vent_proto_common::{MsgKind, MsgKindEnum};
 use steam_vent_proto_steam::enums_clientserver::EMsg;
@@ -248,8 +250,10 @@ impl RawNetMessage {
         })
     }
 
-    pub fn from_message<T: NetMessage>(header: NetMessageHeader, message: T) -> Result<Self> {
-        Self::from_message_with_kind(header, message, T::KIND, T::IS_PROTOBUF)
+    pub fn from_message<T: SendableMessage>(header: NetMessageHeader, message: T) -> Result<Self> {
+        let kind = message.kind();
+        let is_protobuf = message.is_protobuf();
+        Self::from_message_with_kind(header, message, kind, is_protobuf)
     }
 
     pub fn from_message_with_kind<T: EncodableMessage, K: MsgKindEnum>(
@@ -306,7 +310,7 @@ impl RawNetMessage {
 }
 
 impl RawNetMessage {
-    pub fn into_header_and_message<T: NetMessage>(self) -> Result<(NetMessageHeader, T)> {
+    pub fn into_header_and_message<T: ReceivableMessage>(self) -> Result<(NetMessageHeader, T)> {
         if let Some(result) = self.header.result {
             EResult::from_result(result)?;
         }
@@ -324,7 +328,7 @@ impl RawNetMessage {
         }
     }
 
-    pub fn into_message<T: NetMessage>(self) -> Result<T> {
+    pub fn into_message<T: ReceivableMessage>(self) -> Result<T> {
         self.into_header_and_message().map(|(_, msg)| msg)
     }
 }

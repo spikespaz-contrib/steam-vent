@@ -13,7 +13,10 @@ use protobuf::Message;
 use std::io::Error as IoError;
 use std::io::{Cursor, Read, Write};
 use std::{fmt::Debug, io::ErrorKind};
-use steam_vent_common::{EncodableMessage, NetMessage, NetMessageHeader, ServiceMethodRequest};
+use steam_vent_core::{
+    DecodableMessage, EncodableMessage, NetMessageHeader, ReceivableMessage, SendableMessage,
+    ServiceMethodRequest, ServiceNotification,
+};
 use steam_vent_proto_common::{MsgKind, RpcMessage};
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steam_vent_proto_steam::steammessages_base::CMsgMulti;
@@ -57,7 +60,7 @@ fn extract_io_error(error: binrw::Error) -> IoError {
     }
 }
 
-impl EncodableMessage for ChannelEncryptRequest {
+impl DecodableMessage for ChannelEncryptRequest {
     fn read_body(data: BytesMut, _header: &NetMessageHeader) -> Result<Self, IoError> {
         trace!("reading body of {:?} message", Self::KIND);
         let mut reader = Cursor::new(data);
@@ -65,9 +68,10 @@ impl EncodableMessage for ChannelEncryptRequest {
     }
 }
 
-impl NetMessage for ChannelEncryptRequest {
+impl ReceivableMessage for ChannelEncryptRequest {
     type KindEnum = EMsg;
     const KIND: Self::KindEnum = EMsg::k_EMsgChannelEncryptRequest;
+    const IS_PROTOBUF: bool = false;
 }
 
 #[derive(Debug, BinRead)]
@@ -76,7 +80,7 @@ pub(crate) struct ChannelEncryptResult {
     pub result: u32,
 }
 
-impl EncodableMessage for ChannelEncryptResult {
+impl DecodableMessage for ChannelEncryptResult {
     fn read_body(data: BytesMut, _header: &NetMessageHeader) -> Result<Self, IoError> {
         trace!("reading body of {:?} message", Self::KIND);
         let mut reader = Cursor::new(data);
@@ -84,9 +88,10 @@ impl EncodableMessage for ChannelEncryptResult {
     }
 }
 
-impl NetMessage for ChannelEncryptResult {
+impl ReceivableMessage for ChannelEncryptResult {
     type KindEnum = EMsg;
     const KIND: Self::KindEnum = EMsg::k_EMsgChannelEncryptResult;
+    const IS_PROTOBUF: bool = false;
 }
 
 #[derive(Debug)]
@@ -99,7 +104,7 @@ const CRC: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 
 impl EncodableMessage for ClientEncryptResponse {
     fn write_body<W: Write>(&self, mut writer: W) -> Result<(), IoError> {
-        trace!("writing body of {:?} message", Self::KIND);
+        trace!("writing body of {:?} message", self.kind());
         writer.write_u64::<LittleEndian>(u64::MAX)?;
         writer.write_u64::<LittleEndian>(u64::MAX)?;
         writer.write_u32::<LittleEndian>(self.protocol)?;
@@ -118,9 +123,15 @@ impl EncodableMessage for ClientEncryptResponse {
     }
 }
 
-impl NetMessage for ClientEncryptResponse {
+impl SendableMessage for ClientEncryptResponse {
     type KindEnum = EMsg;
-    const KIND: Self::KindEnum = EMsg::k_EMsgChannelEncryptResponse;
+    fn kind(&self) -> Self::KindEnum {
+        EMsg::k_EMsgChannelEncryptResponse
+    }
+
+    fn is_protobuf(&self) -> bool {
+        false
+    }
 }
 
 enum MaybeZipReader {
@@ -203,20 +214,15 @@ impl<R: Read> Iterator for MultiBodyIter<R> {
 pub(crate) struct ServiceMethodMessage<Request: Debug>(pub Request);
 
 impl<Request: ServiceMethodRequest + Debug> EncodableMessage for ServiceMethodMessage<Request> {
-    fn read_body(data: BytesMut, _header: &NetMessageHeader) -> Result<Self, IoError> {
-        trace!("reading body of protobuf message {:?}", Self::KIND);
-        Request::parse(&mut data.reader()).map(ServiceMethodMessage)
-    }
-
     fn write_body<W: Write>(&self, mut writer: W) -> Result<(), IoError> {
-        trace!("writing body of protobuf message {:?}", Self::KIND);
+        trace!("writing body of protobuf message {:?}", self.kind());
         self.0
             .write(&mut writer)
             .map_err(|_| IoError::from(ErrorKind::InvalidData))
     }
 
     fn encode_size(&self) -> usize {
-        self.0.compute_size() as usize
+        self.0.encode_size()
     }
 
     fn process_header(&self, header: &mut NetMessageHeader) {
@@ -224,10 +230,16 @@ impl<Request: ServiceMethodRequest + Debug> EncodableMessage for ServiceMethodMe
     }
 }
 
-impl<Request: ServiceMethodRequest + Debug> NetMessage for ServiceMethodMessage<Request> {
+impl<Request: ServiceMethodRequest + Debug> SendableMessage for ServiceMethodMessage<Request> {
     type KindEnum = EMsg;
-    const KIND: Self::KindEnum = EMsg::k_EMsgServiceMethodCallFromClient;
-    const IS_PROTOBUF: bool = true;
+
+    fn kind(&self) -> Self::KindEnum {
+        EMsg::k_EMsgServiceMethodCallFromClient
+    }
+
+    fn is_protobuf(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug)]
@@ -252,7 +264,7 @@ impl ServiceMethodResponseMessage {
     }
 }
 
-impl EncodableMessage for ServiceMethodResponseMessage {
+impl DecodableMessage for ServiceMethodResponseMessage {
     fn read_body(data: BytesMut, header: &NetMessageHeader) -> Result<Self, IoError> {
         trace!("reading body of protobuf message {:?}", Self::KIND);
         Ok(ServiceMethodResponseMessage {
@@ -266,7 +278,7 @@ impl EncodableMessage for ServiceMethodResponseMessage {
     }
 }
 
-impl NetMessage for ServiceMethodResponseMessage {
+impl ReceivableMessage for ServiceMethodResponseMessage {
     type KindEnum = EMsg;
     const KIND: Self::KindEnum = EMsg::k_EMsgServiceMethodResponse;
     const IS_PROTOBUF: bool = true;
@@ -279,20 +291,20 @@ pub(crate) struct ServiceMethodNotification {
 }
 
 impl ServiceMethodNotification {
-    pub fn into_notification<Request: ServiceMethodRequest>(self) -> Result<Request, NetworkError> {
-        if self.job_name == Request::REQ_NAME {
+    pub fn into_notification<Request: ServiceNotification>(self) -> Result<Request, NetworkError> {
+        if self.job_name == Request::NOTIFICATION_NAME {
             Ok(Request::parse(&mut self.body.reader())
                 .map_err(|e| MalformedBody::new(Self::KIND, e))?)
         } else {
             Err(NetworkError::DifferentServiceMethod(
-                Request::REQ_NAME,
+                Request::NOTIFICATION_NAME,
                 self.job_name,
             ))
         }
     }
 }
 
-impl EncodableMessage for ServiceMethodNotification {
+impl DecodableMessage for ServiceMethodNotification {
     fn read_body(data: BytesMut, header: &NetMessageHeader) -> Result<Self, IoError> {
         trace!("reading body of protobuf message {:?}", Self::KIND);
         Ok(ServiceMethodNotification {
@@ -306,7 +318,7 @@ impl EncodableMessage for ServiceMethodNotification {
     }
 }
 
-impl NetMessage for ServiceMethodNotification {
+impl ReceivableMessage for ServiceMethodNotification {
     type KindEnum = EMsg;
     const KIND: Self::KindEnum = EMsg::k_EMsgServiceMethod;
     const IS_PROTOBUF: bool = true;

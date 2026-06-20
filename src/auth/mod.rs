@@ -3,7 +3,7 @@ mod guard_data;
 
 use crate::connection::raw::RawConnection;
 use crate::connection::unauthenticated::service_method_un_authenticated;
-use crate::message::{MalformedBody, ServiceMethodMessage};
+use crate::message::MalformedBody;
 use crate::net::NetworkError;
 use crate::session::{ConnectionError, LoginError};
 use base64::Engine;
@@ -18,9 +18,9 @@ use rsa::RsaPublicKey;
 use std::io::{Error as IoError, ErrorKind};
 use std::pin::pin;
 use std::time::Duration;
-use steam_vent_common::NetMessage;
 use steam_vent_crypto::encrypt_with_key_pkcs1;
 use steam_vent_proto_steam::enums::ESessionPersistence;
+use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steam_vent_proto_steam::steammessages_auth_steamclient::CAuthentication_GetPasswordRSAPublicKey_Request;
 use steam_vent_proto_steam::steammessages_auth_steamclient::{
     CAuthentication_AllowedConfirmation, CAuthentication_BeginAuthSessionViaCredentials_Request,
@@ -279,7 +279,7 @@ async fn get_password_rsa(
         BigUint::from_str_radix(response.publickey_mod.as_deref().unwrap_or_default(), 16)
             .map_err(|e| {
                 MalformedBody::new(
-                    ServiceMethodMessage::<CAuthentication_GetPasswordRSAPublicKey_Request>::KIND,
+                    EMsg::k_EMsgServiceMethodCallFromClient,
                     IoError::new(ErrorKind::InvalidData, e),
                 )
             })?;
@@ -287,13 +287,13 @@ async fn get_password_rsa(
         BigUint::from_str_radix(response.publickey_exp.as_deref().unwrap_or_default(), 16)
             .map_err(|e| {
                 MalformedBody::new(
-                    ServiceMethodMessage::<CAuthentication_GetPasswordRSAPublicKey_Request>::KIND,
+                    EMsg::k_EMsgServiceMethodCallFromClient,
                     IoError::new(ErrorKind::InvalidData, e),
                 )
             })?;
     let key = RsaPublicKey::new(key_mod, key_exp).map_err(|e| {
         MalformedBody::new(
-            ServiceMethodMessage::<CAuthentication_GetPasswordRSAPublicKey_Request>::KIND,
+            EMsg::k_EMsgServiceMethodCallFromClient,
             IoError::new(ErrorKind::InvalidData, e),
         )
     })?;

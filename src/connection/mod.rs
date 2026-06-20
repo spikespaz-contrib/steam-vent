@@ -17,8 +17,11 @@ use std::future::Future;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
-pub use steam_vent_common::{ConnectionTrait, ReadonlyConnection};
-use steam_vent_common::{EncodableMessage, NetMessage, NetMessageHeader, ServiceMethodRequest};
+pub use steam_vent_core::{ConnectionTrait, ReadonlyConnection};
+use steam_vent_core::{
+    EncodableMessage, NetMessageHeader, ReceivableMessage, SendableMessage, ServiceMethodRequest,
+    ServiceNotification,
+};
 use steam_vent_proto_common::{GCHandshake, JobMultiple, MsgKindEnum};
 use steamid_ng::SteamID;
 use tokio::sync::Mutex;
@@ -159,7 +162,7 @@ pub(crate) trait ConnectionImpl: Sync + Debug {
     fn filter(&self) -> &MessageFilter;
     fn session(&self) -> &Session;
 
-    fn one_with_header<T: NetMessage + 'static>(
+    fn one_with_header<T: ReceivableMessage + 'static>(
         &self,
     ) -> impl Future<Output = Result<(NetMessageHeader, T)>> + 'static {
         // async block instead of async fn, so we don't have to tie the lifetime of the returned future
@@ -171,7 +174,7 @@ pub(crate) trait ConnectionImpl: Sync + Debug {
         }
     }
 
-    fn on_with_header<T: NetMessage + 'static>(
+    fn on_with_header<T: ReceivableMessage + 'static>(
         &self,
     ) -> impl Stream<Item = Result<(NetMessageHeader, T)>> + 'static {
         BroadcastStream::new(self.filter().on_kind(T::KIND)).map(|raw| {
@@ -180,22 +183,14 @@ pub(crate) trait ConnectionImpl: Sync + Debug {
         })
     }
 
-    #[instrument(skip(msg, kind), fields(kind = ?kind))]
-    fn send_with_kind<Msg: NetMessage, K: MsgKindEnum>(
-        &self,
-        msg: Msg,
-        kind: K,
-    ) -> impl Future<Output = Result<()>> + Send {
-        let header = self.session().header(false);
-        self.raw_send_with_kind(header, msg, kind, Msg::IS_PROTOBUF)
-    }
-
-    fn raw_send<Msg: NetMessage>(
+    fn raw_send<Msg: SendableMessage>(
         &self,
         header: NetMessageHeader,
         msg: Msg,
     ) -> impl Future<Output = Result<()>> + Send {
-        self.raw_send_with_kind(header, msg, Msg::KIND, Msg::IS_PROTOBUF)
+        let kind = msg.kind();
+        let is_protobuf = msg.is_protobuf();
+        self.raw_send_with_kind(header, msg, kind, is_protobuf)
     }
 
     fn raw_send_with_kind<Msg: EncodableMessage, K: MsgKindEnum>(
@@ -243,20 +238,24 @@ macro_rules! impl_connection {
         impl ConnectionTrait for $con {
             type Error = NetworkError;
 
-            fn on_notification<T: ServiceMethodRequest>(
+            fn on_notification<T: ServiceNotification>(
                 &self,
             ) -> impl Stream<Item = Result<T>> + 'static {
-                BroadcastStream::new(self.filter().on_notification(T::REQ_NAME))
+                BroadcastStream::new(self.filter().on_notification(T::NOTIFICATION_NAME))
                     .filter_map(|res| res.ok())
                     .map(|raw| raw.into_notification())
             }
 
-            fn one<T: NetMessage + 'static>(&self) -> impl Future<Output = Result<T>> + 'static {
+            fn one<T: ReceivableMessage + 'static>(
+                &self,
+            ) -> impl Future<Output = Result<T>> + 'static {
                 self.one_with_header::<T>()
                     .map(|res| res.map(|(_, msg)| msg))
             }
 
-            fn on<T: NetMessage + 'static>(&self) -> impl Stream<Item = Result<T>> + 'static {
+            fn on<T: ReceivableMessage + 'static>(
+                &self,
+            ) -> impl Stream<Item = Result<T>> + 'static {
                 self.on_with_header::<T>()
                     .map(|res| res.map(|(_, msg)| msg))
             }
@@ -276,7 +275,10 @@ macro_rules! impl_connection {
                 message.into_response::<Msg>()
             }
 
-            async fn job<Msg: NetMessage, Rsp: NetMessage>(&self, msg: Msg) -> Result<Rsp> {
+            async fn job<Req: SendableMessage, Rsp: ReceivableMessage>(
+                &self,
+                msg: Req,
+            ) -> Result<Rsp> {
                 let header = self.session().header(true);
                 let recv = self.filter().on_job_id(header.source_job_id);
                 self.raw_send(header, msg).await?;
@@ -287,9 +289,9 @@ macro_rules! impl_connection {
                     .into_message()
             }
 
-            fn job_multi<Msg: NetMessage, Rsp: NetMessage + JobMultiple>(
+            fn job_multi<Req: SendableMessage, Rsp: ReceivableMessage + JobMultiple>(
                 &self,
-                msg: Msg,
+                msg: Req,
             ) -> impl Stream<Item = Result<Rsp>> + Send {
                 try_stream! {
                     let header = self.session().header(true);
@@ -312,8 +314,11 @@ macro_rules! impl_connection {
                 }
             }
 
-            #[instrument(skip(msg), fields(kind = ?Msg::KIND))]
-            fn send<Msg: NetMessage>(&self, msg: Msg) -> impl Future<Output = Result<()>> + Send {
+            #[instrument(skip(msg), fields(kind = ?msg.kind()))]
+            fn send<Msg: SendableMessage>(
+                &self,
+                msg: Msg,
+            ) -> impl Future<Output = Result<()>> + Send {
                 self.raw_send(self.session().header(false), msg)
             }
         }

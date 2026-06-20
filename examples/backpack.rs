@@ -2,8 +2,7 @@ use std::env::args;
 use std::error::Error;
 use std::io::Cursor;
 use steam_vent::auth::{
-    AuthConfirmationHandler, ConsoleAuthConfirmationHandler, DeviceConfirmationHandler,
-    FileGuardDataStore,
+    ConsoleAuthConfirmationHandler, DeviceConfirmationHandler, FileGuardDataStore,
 };
 use steam_vent::{Connection, ConnectionTrait, GenericGCHandshake, ServerList};
 use steam_vent_proto::RpcMessage;

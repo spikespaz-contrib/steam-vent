@@ -54,6 +54,7 @@ impl RawSteamId {
     pub const NONE: RawSteamId = RawSteamId(0);
 }
 
+/// The header send with every message
 #[derive(Debug, Clone)]
 pub struct NetMessageHeader {
     pub source_job_id: JobId,

@@ -9,7 +9,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-use steam_vent_common::{JobId, NetMessage, NetMessageHeader, RawSteamId};
+use steam_vent_core::{JobId, NetMessageHeader, RawSteamId, ReceivableMessage};
 use steam_vent_crypto::CryptError;
 use steam_vent_proto_steam::steammessages_base::CMsgIPAddress;
 use steam_vent_proto_steam::steammessages_base::cmsg_ipaddress;
@@ -294,12 +294,6 @@ pub async fn hello<C: ConnectionImpl>(conn: &mut C) -> std::result::Result<(), N
         ..NetMessageHeader::default()
     };
 
-    conn.raw_send_with_kind(
-        header,
-        req,
-        CMsgClientHello::KIND,
-        CMsgClientHello::IS_PROTOBUF,
-    )
-    .await?;
+    conn.raw_send(header, req).await?;
     Ok(())
 }
