@@ -149,6 +149,9 @@ pub trait AuthConfirmationHandler {
     /// If the confirmation handler supports any of the allowed confirmations,
     /// it returns a [`ConfirmationAction`] with the required action.
     ///
+    /// If you want to allow multiple possible confirmation methods, you can use a tuple, slice, array or vec
+    /// of handlers.
+    ///
     /// If the confirmation handler does not support any of the allowed confirmations it returns `None`.
     /// If no confirmation handler supports the allowed confirmations the login will fail.
     fn handle_confirmation<'this>(
@@ -156,6 +159,7 @@ pub trait AuthConfirmationHandler {
         allowed_confirmations: &[ConfirmationMethod],
     ) -> Box<dyn Future<Output = Option<ConfirmationAction>> + 'this>;
 
+    /// Wrap the handler in a box
     fn boxed(self) -> Box<dyn AuthConfirmationHandler>
     where
         Self: Sized + 'static,
