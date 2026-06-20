@@ -2,7 +2,6 @@ use crate::eresult::EResult;
 use crate::message::MalformedBody;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use protobuf::Message;
 use std::fmt::Debug;
 use std::io::Error as IoError;
 use std::io::{Cursor, Seek, SeekFrom};
@@ -10,6 +9,7 @@ use steam_vent_core::{
     EncodableMessage, JobId, NetMessageHeader, RawSteamId, ReceivableMessage, SendableMessage,
 };
 use steam_vent_crypto::CryptError;
+use steam_vent_proto_common::protobuf::Message;
 use steam_vent_proto_common::{MsgKind, MsgKindEnum};
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steam_vent_proto_steam::steammessages_base::CMsgProtoBufHeader;

@@ -9,7 +9,6 @@ use futures_util::{
     stream::{iter, once},
     StreamExt,
 };
-use protobuf::Message;
 use std::io::Error as IoError;
 use std::io::{Cursor, Read, Write};
 use std::{fmt::Debug, io::ErrorKind};
@@ -17,6 +16,7 @@ use steam_vent_core::{
     DecodableMessage, EncodableMessage, NetMessageHeader, ReceivableMessage, SendableMessage,
     ServiceMethodRequest, ServiceNotification,
 };
+use steam_vent_proto_common::protobuf::Message;
 use steam_vent_proto_common::{MsgKind, RpcMessage};
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steam_vent_proto_steam::steammessages_base::CMsgMulti;

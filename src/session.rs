@@ -4,13 +4,13 @@ use crate::connection::raw::RawConnection;
 use crate::connection::unauthenticated::AccessTokenError;
 use crate::eresult::EResult;
 use crate::net::NetworkError;
-use protobuf::MessageField;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use steam_vent_core::{JobId, NetMessageHeader, RawSteamId, ReceivableMessage};
 use steam_vent_crypto::CryptError;
+use steam_vent_proto_common::protobuf::MessageField;
 use steam_vent_proto_steam::steammessages_base::CMsgIPAddress;
 use steam_vent_proto_steam::steammessages_base::cmsg_ipaddress;
 use steam_vent_proto_steam::steammessages_clientserver_login::{

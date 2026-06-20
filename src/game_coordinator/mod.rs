@@ -5,13 +5,13 @@ use crate::net::{RawNetMessage, decode_kind, header_encode_size, write_header};
 use crate::session::Session;
 use crate::{Connection, NetworkError};
 use futures_util::future::{Either, select};
-use protobuf::Message;
 use std::fmt::{Debug, Formatter};
 use std::pin::pin;
 use std::time::Duration;
 use steam_vent_core::{
     ConnectionTrait, EncodableMessage, JobId, NetMessageHeader, ReceivableMessage, SendableMessage,
 };
+use steam_vent_proto_common::protobuf::{self, Enum, Message};
 use steam_vent_proto_common::{GCHandshake, MsgKindEnum, RpcMessage, RpcMessageWithKind};
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steam_vent_proto_steam::steammessages_clientserver::CMsgClientGamesPlayed;
@@ -47,7 +47,7 @@ pub enum GCMsgKind {
     k_EMsgGCServerHello = 4007,
 }
 
-impl protobuf::Enum for GCMsgKind {
+impl Enum for GCMsgKind {
     const NAME: &'static str = "GCMsgKind";
 
     fn value(&self) -> i32 {

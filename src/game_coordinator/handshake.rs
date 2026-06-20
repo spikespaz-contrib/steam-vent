@@ -1,4 +1,4 @@
-use protobuf::{Message as _, SpecialFields};
+use steam_vent_proto_common::protobuf::{self, CodedInputStream, Message, SpecialFields};
 use steam_vent_proto_common::{GCHandshake, RpcMessage, RpcMessageWithKind};
 use steam_vent_proto_steam::steammessages_clientserver_login::CMsgClientHello;
 
@@ -35,17 +35,17 @@ impl GCHandshake for GenericGCHandshake {
 
 #[derive(PartialEq, Clone, Default, Debug)]
 pub struct GenericCMsgClientWelcome {
-    pub special_fields: protobuf::SpecialFields,
+    pub special_fields: SpecialFields,
 }
 
-impl protobuf::Message for GenericCMsgClientWelcome {
+impl Message for GenericCMsgClientWelcome {
     const NAME: &'static str = "CMsgClientWelcome";
 
     fn is_initialized(&self) -> bool {
         true
     }
 
-    fn merge_from(&mut self, is: &mut protobuf::CodedInputStream<'_>) -> protobuf::Result<()> {
+    fn merge_from(&mut self, is: &mut CodedInputStream<'_>) -> protobuf::Result<()> {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             protobuf::rt::read_unknown_or_skip_group(
                 tag,

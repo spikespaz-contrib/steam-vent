@@ -1979,7 +1979,6 @@ dependencies = [
  "num-bigint-dig",
  "num-traits",
  "num_enum",
- "protobuf",
  "rand 0.10.0",
  "reqwest",
  "rsa",
