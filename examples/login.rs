@@ -1,8 +1,8 @@
 use std::env::args;
 use std::error::Error;
 use steam_vent::auth::{
-    ConsoleAuthConfirmationHandler, DeviceConfirmationHandler, FileGuardDataStore,
-    SharedSecretAuthConfirmationHandler,
+    AuthConfirmationHandler, ConsoleAuthConfirmationHandler, DeviceConfirmationHandler,
+    FileGuardDataStore, SharedSecretAuthConfirmationHandler,
 };
 use steam_vent::{Connection, ConnectionTrait, ServerList};
 use steam_vent_proto::steammessages_player_steamclient::CPlayer_GetOwnedGames_Request;
@@ -18,31 +18,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let guard_secret = args.next();
 
     let server_list = ServerList::discover().await?;
-    let connection = match guard_secret {
-        Some(secret) => {
-            Connection::login(
-                &server_list,
-                &account,
-                &password,
-                FileGuardDataStore::user_cache(),
-                SharedSecretAuthConfirmationHandler::new(&secret),
-            )
-            .await?
-        }
-        None => {
-            Connection::login(
-                &server_list,
-                &account,
-                &password,
-                FileGuardDataStore::user_cache(),
-                (
-                    ConsoleAuthConfirmationHandler::default(),
-                    DeviceConfirmationHandler,
-                ),
-            )
-            .await?
-        }
+
+    let confirmation: Box<dyn AuthConfirmationHandler> = match guard_secret {
+        Some(secret) => Box::new(SharedSecretAuthConfirmationHandler::new(&secret)),
+        None => Box::new((
+            ConsoleAuthConfirmationHandler::default(),
+            DeviceConfirmationHandler,
+        )),
     };
+
+    let connection = Connection::login(
+        &server_list,
+        &account,
+        &password,
+        FileGuardDataStore::user_cache(),
+        confirmation,
+    )
+    .await?;
 
     println!("requesting games");
 

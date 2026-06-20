@@ -9,7 +9,7 @@
 - `AuthConfirmationHandler::or` has been removed, use tuples of confirmation
   handlers instead.
 - `AuthConfirmationHandler::handle_confirmation` now takes `&mut self` instead
-  of `self`.
+  of `self` and returns a boxed future.
 
 #### Connection
 
