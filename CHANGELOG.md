@@ -6,8 +6,8 @@
 
 #### Authentication
 
-- `AuthConfirmationHandler::or` has been removed, use tuples of confirmation
-  handlers instead.
+- `AuthConfirmationHandler::or` has been removed, use tuples, arrays, vecs or
+  slices of confirmation handlers instead.
 - `AuthConfirmationHandler::handle_confirmation` now takes `&mut self` instead
   of `self` and returns a boxed future.
 

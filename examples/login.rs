@@ -19,12 +19,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let server_list = ServerList::discover().await?;
 
-    let confirmation: Box<dyn AuthConfirmationHandler> = match guard_secret {
-        Some(secret) => Box::new(SharedSecretAuthConfirmationHandler::new(&secret)),
-        None => Box::new((
+    let confirmation = match guard_secret {
+        Some(secret) => SharedSecretAuthConfirmationHandler::new(&secret).boxed(),
+        None => (
             ConsoleAuthConfirmationHandler::default(),
             DeviceConfirmationHandler,
-        )),
+        )
+            .boxed(),
     };
 
     let connection = Connection::login(

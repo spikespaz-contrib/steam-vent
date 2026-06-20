@@ -317,12 +317,11 @@ pub(crate) async fn perform_confirmation<C: AuthConfirmationHandler>(
     allowed_confirmations: &[ConfirmationMethod],
 ) -> Option<Result<Tokens, ConnectionError>> {
     let pending = begin.poll();
-    match select(
-        pin!(confirmation_handler.handle_confirmation(allowed_confirmations)),
-        pin!(pending.wait_for_tokens(raw)),
-    )
-    .await
-    {
+
+    let action = Box::into_pin(confirmation_handler.handle_confirmation(allowed_confirmations));
+    let tokens = pin!(pending.wait_for_tokens(raw));
+
+    match select(action, tokens).await {
         Either::Left((confirmation_action, tokens_fut)) => {
             let Some(confirmation_action) = confirmation_action else {
                 if begin.action_required() {
