@@ -79,7 +79,7 @@ impl Connection {
             .await
     }
 
-    /// Start a client session on a new connection
+    /// Start an authenticated client session on a new connection by logging in with username, password and steam guard.
     pub async fn login<H: AuthConfirmationHandler, G: GuardDataStore>(
         server_list: &ServerList,
         account: &str,
@@ -100,6 +100,9 @@ impl Connection {
             .await
     }
 
+    /// Create a new authenticated session with a previously obtained refresh token.
+    ///
+    /// You can get the refresh token after login from [`Connection::refresh_token`].
     pub async fn login_with_refresh_token(
         server_list: &ServerList,
         token: &RefreshToken,
@@ -110,8 +113,14 @@ impl Connection {
             .await
     }
 
-    pub fn refresh_token(&self) -> Option<&RefreshToken> {
-        self.session().refresh_token.as_ref()
+    /// Get the refresh token for the current session.
+    ///
+    /// This can be used for future authentication with [`Connection::login_with_refresh_token`].
+    pub fn refresh_token(&self) -> &RefreshToken {
+        self.session()
+            .refresh_token
+            .as_ref()
+            .expect("authenticated connections always have a refresh token")
     }
 
     pub fn steam_id(&self) -> SteamID {

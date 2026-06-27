@@ -4,6 +4,7 @@ use steam_machine_id::MachineID;
 use steam_vent_proto_common::protobuf::Enum;
 use steam_vent_proto_steam::steammessages_auth_steamclient::EAuthTokenPlatformType;
 
+/// Information about the client to present to steam when authenticating
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(from = "RawClientInfo")]
 #[serde(into = "RawClientInfo")]
@@ -35,6 +36,7 @@ impl Default for ClientInfo {
     }
 }
 
+/// Client OS type
 #[derive(Debug, Clone, Copy, Default)]
 pub enum Os {
     Web,
@@ -69,6 +71,7 @@ impl TryFrom<i32> for Os {
     }
 }
 
+/// Unique identifier for the machine
 #[derive(Debug, Clone)]
 pub struct MachineId {
     // newtype to prevent steam-machine-id from being part of the public api
@@ -76,7 +79,16 @@ pub struct MachineId {
 }
 
 impl MachineId {
-    pub fn encode(&self) -> Vec<u8> {
+    /// Generate a machine id based on the provided string.
+    ///
+    /// The logic for generating the machine id is one way, but repeatable
+    pub fn new(identifier: &str) -> Self {
+        MachineId {
+            id: MachineID::from_account_name(identifier),
+        }
+    }
+
+    pub(crate) fn encode(&self) -> Vec<u8> {
         self.id.to_message()
     }
 }

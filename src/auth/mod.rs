@@ -352,6 +352,12 @@ pub(crate) async fn perform_confirmation<C: AuthConfirmationHandler>(
     }
 }
 
+/// A token created on login that can be used to re-authenticate
+///
+/// After login it can be retrieved from [`Connection::refresh_token`] and used for authentication with [`Connection::login_with_refresh_token`].
+///
+/// [`Connection::refresh_token`]: `crate::Connection::refresh_token`
+/// [`Connection::login_with_refresh_token`]: `crate::Connection::login_with_refresh_token`
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct RefreshToken {
