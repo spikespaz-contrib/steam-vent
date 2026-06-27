@@ -123,26 +123,36 @@ impl Connection {
         &self.auth.refresh_token
     }
 
+    /// Get the steam id of the user or anonymous account that is connected.
     pub fn steam_id(&self) -> SteamID {
         self.auth.steam_id
     }
 
+    /// Get a numeric identifier for the session
     pub fn session_id(&self) -> i32 {
         self.raw.session.session_id
     }
 
+    /// Get the id of the "cell" the client is in.
+    ///
+    /// This can be used by [`ServerList`] discovery to potentially connect to a more optimal steam server.
+    ///
+    /// [`ServerList`]: `crate::ServerList`
     pub fn cell_id(&self) -> u32 {
         self.raw.session.cell_id
     }
 
+    /// Get the ip address of the client, as determined by steam.
     pub fn public_ip(&self) -> IpAddr {
         self.auth.public_ip
     }
 
+    /// Get the country code of the client, based on the IP address as determined by steam.
     pub fn ip_country_code(&self) -> &str {
         &self.auth.ip_country_code
     }
 
+    /// Change how long we wait for a response from methods that require a response before considering it failed.
     pub fn set_timeout(&mut self, timeout: Duration) {
         self.raw.timeout = timeout;
     }
