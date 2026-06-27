@@ -439,4 +439,6 @@ pub enum RefreshTokenError {
     InvalidIssuer,
     #[error("invalid subject steam id")]
     InvalidSubject,
+    #[error("refresh token is expired")]
+    Expired,
 }

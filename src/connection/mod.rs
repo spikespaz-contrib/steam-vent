@@ -7,7 +7,7 @@ use crate::auth::{AuthConfirmationHandler, ClientInfo, GuardDataStore, RefreshTo
 use crate::message::{ServiceMethodMessage, ServiceMethodResponseMessage};
 use crate::net::{NetworkError, RawNetMessage};
 use crate::serverlist::ServerList;
-use crate::session::{ConnectionError, Session};
+use crate::session::{ConnectionError, RawSession, SessionAuthenticationDetails};
 use async_stream::try_stream;
 pub(crate) use filter::MessageFilter;
 use futures_util::{FutureExt, Sink, SinkExt};
@@ -19,8 +19,8 @@ use std::sync::Arc;
 use std::time::Duration;
 pub use steam_vent_core::{ConnectionTrait, ReadonlyConnection};
 use steam_vent_core::{
-    EncodableMessage, NetMessageHeader, ReceivableMessage, SendableMessage, ServiceMethodRequest,
-    ServiceNotification,
+    EncodableMessage, JobId, NetMessageHeader, RawSteamId, ReceivableMessage, SendableMessage,
+    ServiceMethodRequest, ServiceNotification,
 };
 use steam_vent_proto_common::{GCHandshake, JobMultiple, MsgKindEnum};
 use steamid_ng::SteamID;
@@ -50,7 +50,10 @@ impl MessageSender {
 
 /// A connection to the steam server
 #[derive(Clone)]
-pub struct Connection(RawConnection);
+pub struct Connection {
+    raw: RawConnection,
+    pub(crate) auth: SessionAuthenticationDetails,
+}
 
 impl Debug for Connection {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -59,8 +62,8 @@ impl Debug for Connection {
 }
 
 impl Connection {
-    pub(self) fn new(raw: RawConnection) -> Self {
-        Self(raw)
+    pub(self) fn new(raw: RawConnection, auth: SessionAuthenticationDetails) -> Self {
+        Self { raw, auth }
     }
 
     /// Start an anonymous client session on a new connection
@@ -117,40 +120,35 @@ impl Connection {
     ///
     /// This can be used for future authentication with [`Connection::login_with_refresh_token`].
     pub fn refresh_token(&self) -> &RefreshToken {
-        self.session()
-            .refresh_token
-            .as_ref()
-            .expect("authenticated connections always have a refresh token")
+        &self.auth.refresh_token
     }
 
     pub fn steam_id(&self) -> SteamID {
-        self.session()
-            .steam_id
-            .expect("authenticated connections always have a steamid")
+        self.auth.steam_id
     }
 
     pub fn session_id(&self) -> i32 {
-        self.session().session_id
+        self.raw.session.session_id
     }
 
     pub fn cell_id(&self) -> u32 {
-        self.session().cell_id
+        self.raw.session.cell_id
     }
 
-    pub fn public_ip(&self) -> Option<IpAddr> {
-        self.session().public_ip
+    pub fn public_ip(&self) -> IpAddr {
+        self.auth.public_ip
     }
 
-    pub fn ip_country_code(&self) -> Option<String> {
-        self.session().ip_country_code.clone()
+    pub fn ip_country_code(&self) -> &str {
+        &self.auth.ip_country_code
     }
 
     pub fn set_timeout(&mut self, timeout: Duration) {
-        self.0.timeout = timeout;
+        self.raw.timeout = timeout;
     }
 
     pub(crate) fn sender(&self) -> &MessageSender {
-        &self.0.sender
+        &self.raw.sender
     }
 
     /// Get all messages that haven't been filtered by any of the filters
@@ -158,7 +156,7 @@ impl Connection {
     /// Note that at most 32 unprocessed connections are stored and calling
     /// this method clears the buffer
     pub fn take_unprocessed(&self) -> Vec<RawNetMessage> {
-        self.0.filter.unprocessed()
+        self.raw.filter.unprocessed()
     }
 }
 
@@ -175,7 +173,27 @@ impl Connection {
 pub(crate) trait ConnectionImpl: Sync + Debug {
     fn timeout(&self) -> Duration;
     fn filter(&self) -> &MessageFilter;
-    fn session(&self) -> &Session;
+    fn raw_session(&self) -> &RawSession;
+    fn auth_details(&self) -> Option<&SessionAuthenticationDetails>;
+
+    fn generate_header(&self, job: bool) -> NetMessageHeader {
+        NetMessageHeader {
+            session_id: self.raw_session().session_id,
+            source_job_id: if job {
+                self.raw_session().job_id.next()
+            } else {
+                JobId::NONE
+            },
+            target_job_id: JobId::NONE,
+            steam_id: RawSteamId::new(
+                self.auth_details()
+                    .map(|auth| auth.steam_id.steam64())
+                    .unwrap_or_default(),
+            ),
+            source_app_id: self.auth_details().and_then(|auth| auth.app_id),
+            ..NetMessageHeader::default()
+        }
+    }
 
     fn one_with_header<T: ReceivableMessage + 'static>(
         &self,
@@ -218,16 +236,20 @@ pub(crate) trait ConnectionImpl: Sync + Debug {
 }
 
 impl ConnectionImpl for Connection {
+    fn raw_session(&self) -> &RawSession {
+        &self.raw.session
+    }
+
+    fn auth_details(&self) -> Option<&SessionAuthenticationDetails> {
+        Some(&self.auth)
+    }
+
     fn timeout(&self) -> Duration {
-        self.0.timeout()
+        self.raw.timeout()
     }
 
     fn filter(&self) -> &MessageFilter {
-        self.0.filter()
-    }
-
-    fn session(&self) -> &Session {
-        self.0.session()
+        self.raw.filter()
     }
 
     async fn raw_send_with_kind<Msg: EncodableMessage, K: MsgKindEnum>(
@@ -238,7 +260,7 @@ impl ConnectionImpl for Connection {
         is_protobuf: bool,
     ) -> Result<()> {
         <RawConnection as ConnectionImpl>::raw_send_with_kind(
-            &self.0,
+            &self.raw,
             header,
             msg,
             kind,
@@ -279,7 +301,7 @@ macro_rules! impl_connection {
                 &self,
                 msg: Msg,
             ) -> Result<Msg::Response> {
-                let header = self.session().header(true);
+                let header = self.generate_header(true);
                 let recv = self.filter().on_job_id(header.source_job_id);
                 self.raw_send(header, ServiceMethodMessage(msg)).await?;
                 let message = timeout(self.timeout(), recv)
@@ -294,7 +316,7 @@ macro_rules! impl_connection {
                 &self,
                 msg: Req,
             ) -> Result<Rsp> {
-                let header = self.session().header(true);
+                let header = self.generate_header(true);
                 let recv = self.filter().on_job_id(header.source_job_id);
                 self.raw_send(header, msg).await?;
                 timeout(self.timeout(), recv)
@@ -309,7 +331,7 @@ macro_rules! impl_connection {
                 msg: Req,
             ) -> impl Stream<Item = Result<Rsp>> + Send {
                 try_stream! {
-                    let header = self.session().header(true);
+                    let header = self.generate_header(true);
                     let source_job_id = header.source_job_id;
                     let mut recv = self.filter().on_job_id_multi(source_job_id);
                     self.raw_send(header, msg).await?;
@@ -334,7 +356,7 @@ macro_rules! impl_connection {
                 &self,
                 msg: Msg,
             ) -> impl Future<Output = Result<()>> + Send {
-                self.raw_send(self.session().header(false), msg)
+                self.raw_send(self.generate_header(false), msg)
             }
         }
     };

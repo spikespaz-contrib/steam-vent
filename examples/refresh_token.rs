@@ -22,9 +22,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let token = RefreshToken::new(token)?;
             match Connection::login_with_refresh_token(&server_list, &token).await {
                 Ok(connection) => {
-                    if let Some(new_token) = connection.refresh_token()
-                        && &token != new_token
-                    {
+                    if connection.refresh_token() != &token {
                         println!("new token for future use: {}", token.token());
                     }
 
@@ -55,11 +53,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .await?;
 
-        if let Some(token) = connection.refresh_token() {
-            println!("refresh token for future use: {}", token.token());
-        } else {
-            println!("No refresh token received from steam")
-        }
+        println!(
+            "refresh token for future use: {}",
+            connection.refresh_token().token()
+        );
 
         connection
     };

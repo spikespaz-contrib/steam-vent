@@ -2,7 +2,7 @@ pub mod handshake;
 
 use crate::connection::{ConnectionImpl, MessageFilter, MessageSender};
 use crate::net::{RawNetMessage, decode_kind, header_encode_size, write_header};
-use crate::session::Session;
+use crate::session::{RawSession, SessionAuthenticationDetails};
 use crate::{Connection, NetworkError};
 use futures_util::future::{Either, select};
 use std::fmt::{Debug, Formatter};
@@ -29,8 +29,9 @@ pub struct GameCoordinator {
     app_id: u32,
     filter: MessageFilter,
     sender: MessageSender,
-    session: Session,
+    session: RawSession,
     timeout: Duration,
+    auth: SessionAuthenticationDetails,
 }
 
 /// While these kinds are consistent between games, they are not defined in the generic steam protobufs.
@@ -130,7 +131,8 @@ impl GameCoordinator {
             app_id,
             filter,
             sender: connection.sender().clone(),
-            session: connection.session().clone().with_app_id(app_id),
+            session: connection.raw_session().clone(),
+            auth: connection.auth.clone().with_app_id(app_id),
             timeout: connection.timeout(),
         };
 
@@ -175,7 +177,7 @@ impl GameCoordinator {
     ) -> Result<(), NetworkError> {
         let hello = hello_fn();
         let is_protobuf = hello.is_protobuf();
-        if self.session.is_server() {
+        if self.auth.is_server() {
             self.send(hello.with_kind(GCMsgKind::k_EMsgGCServerHello, is_protobuf))
                 .await?;
         } else {
@@ -186,7 +188,7 @@ impl GameCoordinator {
     }
 
     async fn wait_welcome(&self) -> Result<RawNetMessage, NetworkError> {
-        if self.session.is_server() {
+        if self.auth.is_server() {
             self.filter.one_kind(GCMsgKind::k_EMsgGCServerWelcome)
         } else {
             self.filter.one_kind(GCMsgKind::k_EMsgGCClientWelcome)
@@ -205,7 +207,7 @@ impl ConnectionImpl for GameCoordinator {
         &self.filter
     }
 
-    fn session(&self) -> &Session {
+    fn raw_session(&self) -> &RawSession {
         &self.session
     }
 
@@ -237,6 +239,10 @@ impl ConnectionImpl for GameCoordinator {
 
         let msg = RawNetMessage::from_message(header, ClientToGcMessage { data })?;
         self.sender.send_raw(msg).await
+    }
+
+    fn auth_details(&self) -> Option<&crate::session::SessionAuthenticationDetails> {
+        todo!()
     }
 }
 

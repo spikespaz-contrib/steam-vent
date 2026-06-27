@@ -1,9 +1,10 @@
 use super::Result;
 use super::raw::RawConnection;
 use crate::auth::{
-    AuthConfirmationHandler, ClientInfo, GuardDataStore, RefreshToken, begin_password_auth,
-    perform_confirmation,
+    AuthConfirmationHandler, ClientInfo, GuardDataStore, RefreshToken, RefreshTokenError,
+    begin_password_auth, perform_confirmation,
 };
+use crate::connection::ConnectionImpl;
 use crate::message::{ServiceMethodMessage, ServiceMethodResponseMessage};
 use crate::net::RawNetMessage;
 use crate::session::{anonymous, login};
@@ -53,9 +54,10 @@ impl UnAuthenticatedConnection {
     /// Start an anonymous client session with this connection
     pub async fn anonymous(self) -> Result<Connection, ConnectionError> {
         let mut raw = self.0;
-        raw.session = anonymous(&raw, AccountType::AnonUser).await?;
-        raw.setup_heartbeat();
-        let connection = Connection::new(raw);
+        let session = anonymous(&raw, AccountType::AnonUser).await?;
+        raw.session = session.session;
+        raw.setup_heartbeat(session.auth.steam_id);
+        let connection = Connection::new(raw, session.auth);
 
         Ok(connection)
     }
@@ -63,9 +65,10 @@ impl UnAuthenticatedConnection {
     /// Start an anonymous server session with this connection
     pub async fn anonymous_server(self) -> Result<Connection, ConnectionError> {
         let mut raw = self.0;
-        raw.session = anonymous(&raw, AccountType::AnonGameServer).await?;
-        raw.setup_heartbeat();
-        let connection = Connection::new(raw);
+        let session = anonymous(&raw, AccountType::AnonGameServer).await?;
+        raw.session = session.session;
+        raw.setup_heartbeat(session.auth.steam_id);
+        let connection = Connection::new(raw, session.auth);
 
         Ok(connection)
     }
@@ -124,15 +127,16 @@ impl UnAuthenticatedConnection {
             debug!("no guard data received");
         }
 
-        raw.session = login(
+        let session = login(
             &mut raw,
             Some(account),
             steam_id,
             tokens.refresh_token.as_ref(),
         )
         .await?;
-        raw.setup_heartbeat();
-        let connection = Connection::new(raw);
+        raw.session = session.session;
+        raw.setup_heartbeat(session.auth.steam_id);
+        let connection = Connection::new(raw, session.auth);
 
         Ok(connection)
     }
@@ -145,12 +149,13 @@ impl UnAuthenticatedConnection {
         let mut raw = self.0;
 
         if token.expired() {
-            return Err(LoginError::ExpiredToken.into());
+            return Err(RefreshTokenError::Expired.into());
         }
 
-        raw.session = login(&mut raw, None, token.subject, token.token()).await?;
-        raw.setup_heartbeat();
-        Ok(Connection::new(raw))
+        let session = login(&mut raw, None, token.subject, token.token()).await?;
+        raw.session = session.session;
+        raw.setup_heartbeat(session.auth.steam_id);
+        Ok(Connection::new(raw, session.auth))
     }
 }
 
@@ -200,7 +205,7 @@ pub(crate) async fn service_method_un_authenticated<Msg: ServiceMethodRequest>(
     connection: &RawConnection,
     msg: Msg,
 ) -> Result<Msg::Response> {
-    let header = connection.session.header(true);
+    let header = connection.generate_header(true);
     let recv = connection.filter.on_job_id(header.source_job_id);
     let msg = RawNetMessage::from_message_with_kind(
         header,

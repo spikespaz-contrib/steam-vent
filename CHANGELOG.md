@@ -21,6 +21,8 @@
 - The lower level function `one_with_header`, `on_with_header`,
   `send_with_kind`, `raw_send` and `raw_send_with_kind` have been removed from
   the `ConnectionTrait` in order to trim the public api.
+- Information about the uses for a `Connection` (steam id, public ip, etc) no
+  longer returns an `Option`.
 
 #### Messages
 

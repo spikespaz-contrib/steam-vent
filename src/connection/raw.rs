@@ -2,7 +2,7 @@ use super::Result;
 use crate::connection::{ConnectionImpl, MessageFilter, MessageSender};
 use crate::message::flatten_multi;
 use crate::net::RawNetMessage;
-use crate::session::{Session, hello};
+use crate::session::{RawSession, SessionAuthenticationDetails, hello};
 use crate::transport::websocket::connect;
 use crate::{ConnectionError, NetworkError, ServerList};
 use bytes::BytesMut;
@@ -14,6 +14,7 @@ use std::time::Duration;
 use steam_vent_core::{EncodableMessage, NetMessageHeader, RawSteamId};
 use steam_vent_proto_common::MsgKindEnum;
 use steam_vent_proto_steam::steammessages_clientserver_login::CMsgClientHeartBeat;
+use steamid_ng::SteamID;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tokio::{select, spawn};
@@ -23,7 +24,7 @@ use tracing::{debug, error};
 
 #[derive(Clone)]
 pub(crate) struct RawConnection {
-    pub session: Session,
+    pub session: RawSession,
     pub filter: MessageFilter,
     pub timeout: Duration,
     pub sender: MessageSender,
@@ -56,7 +57,7 @@ impl RawConnection {
         let filter = MessageFilter::new(receiver);
         let heartbeat_cancellation_token = CancellationToken::new();
         let mut connection = RawConnection {
-            session: Session::default(),
+            session: RawSession::default(),
             filter,
             sender: MessageSender {
                 write: Arc::new(Mutex::new(Box::pin(sender))),
@@ -70,16 +71,12 @@ impl RawConnection {
         Ok(connection)
     }
 
-    pub fn setup_heartbeat(&self) {
+    pub fn setup_heartbeat(&self, steam_id: SteamID) {
         let sender = self.sender.clone();
         let interval = self.session.heartbeat_interval;
         let header = NetMessageHeader {
             session_id: self.session.session_id,
-            steam_id: self
-                .session()
-                .steam_id
-                .map(|id| RawSteamId::new(id.steam64()))
-                .unwrap_or_default(),
+            steam_id: RawSteamId::new(steam_id.steam64()),
             ..NetMessageHeader::default()
         };
         debug!("Setting up heartbeat with interval {:?}", interval);
@@ -110,16 +107,20 @@ impl RawConnection {
 }
 
 impl ConnectionImpl for RawConnection {
+    fn raw_session(&self) -> &RawSession {
+        &self.session
+    }
+
+    fn auth_details(&self) -> Option<&SessionAuthenticationDetails> {
+        None
+    }
+
     fn timeout(&self) -> Duration {
         self.timeout
     }
 
     fn filter(&self) -> &MessageFilter {
         &self.filter
-    }
-
-    fn session(&self) -> &Session {
-        &self.session
     }
 
     async fn raw_send_with_kind<Msg: EncodableMessage, K: MsgKindEnum>(

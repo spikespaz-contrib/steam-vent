@@ -26,8 +26,6 @@ type Result<T, E = ConnectionError> = std::result::Result<T, E>;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ConnectionError {
-    #[error("Access token error: {0:#}")]
-    AccessToken(#[from] RefreshTokenError),
     #[error("Network error: {0:#}")]
     Network(#[from] NetworkError),
     #[error("Login failed: {0:#}")]
@@ -47,9 +45,17 @@ impl From<ConfirmationError> for ConnectionError {
     }
 }
 
+impl From<RefreshTokenError> for ConnectionError {
+    fn from(value: RefreshTokenError) -> Self {
+        ConnectionError::LoginError(value.into())
+    }
+}
+
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum LoginError {
+    #[error("Access token error: {0:#}")]
+    AccessToken(#[from] RefreshTokenError),
     #[error("invalid credentials")]
     InvalidCredentials,
     #[error("unknown error {0:?}")]
@@ -64,8 +70,8 @@ pub enum LoginError {
     RateLimited,
     #[error("invalid steam id")]
     InvalidSteamId,
-    #[error("refresh token is expired")]
-    ExpiredToken,
+    #[error("steam didn't return a refresh token")]
+    NoToken,
 }
 
 impl From<EResult> for LoginError {
@@ -110,57 +116,45 @@ impl Default for JobIdCounter {
 }
 
 #[derive(Debug, Clone)]
-pub struct Session {
+pub(crate) struct Session {
+    pub session: RawSession,
+    pub auth: SessionAuthenticationDetails,
+}
+
+/// A session that might not have authenticated yet
+#[derive(Debug, Clone)]
+pub(crate) struct RawSession {
     pub session_id: i32,
     pub cell_id: u32,
-    pub public_ip: Option<IpAddr>,
-    pub ip_country_code: Option<String>,
     pub job_id: JobIdCounter,
-    pub steam_id: Option<SteamID>,
     pub heartbeat_interval: Duration,
-    pub app_id: Option<u32>,
-    pub refresh_token: Option<RefreshToken>,
 }
 
-impl Default for Session {
+/// Details for authenticated sessions
+#[derive(Debug, Clone)]
+pub(crate) struct SessionAuthenticationDetails {
+    pub public_ip: IpAddr,
+    pub ip_country_code: String,
+    pub steam_id: SteamID,
+    pub app_id: Option<u32>,
+    pub refresh_token: RefreshToken,
+}
+
+impl Default for RawSession {
     fn default() -> Self {
-        Session {
+        RawSession {
             session_id: 0,
             cell_id: 0,
-            public_ip: None,
-            ip_country_code: None,
             job_id: JobIdCounter::default(),
-            steam_id: None,
             heartbeat_interval: Duration::from_secs(15),
-            app_id: None,
-            refresh_token: None,
         }
     }
 }
 
-impl Session {
-    pub fn header(&self, job: bool) -> NetMessageHeader {
-        NetMessageHeader {
-            session_id: self.session_id,
-            source_job_id: if job { self.job_id.next() } else { JobId::NONE },
-            target_job_id: JobId::NONE,
-            steam_id: self
-                .steam_id
-                .map(|id| RawSteamId::new(id.steam64()))
-                .unwrap_or_default(),
-            source_app_id: self.app_id,
-            ..NetMessageHeader::default()
-        }
-    }
-
+impl SessionAuthenticationDetails {
     pub fn is_server(&self) -> bool {
-        match self.steam_id {
-            Some(steam_id) => {
-                steam_id.account_type() == AccountType::AnonGameServer
-                    || steam_id.account_type() == AccountType::GameServer
-            }
-            _ => false,
-        }
+        self.steam_id.account_type() == AccountType::AnonGameServer
+            || self.steam_id.account_type() == AccountType::GameServer
     }
 
     pub fn with_app_id(mut self, app_id: u32) -> Self {
@@ -235,7 +229,8 @@ async fn send_logon(
         .access_token
         .clone()
         .map(RefreshToken::new)
-        .transpose()?;
+        .transpose()?
+        .ok_or(LoginError::NoToken)?;
 
     let header = NetMessageHeader {
         source_job_id: JobId::NONE,
@@ -264,23 +259,32 @@ async fn send_logon(
 
     debug!(steam_id = %u64::from(assigned_steam_id), "session started");
     Ok(Session {
-        session_id: header.session_id,
-        cell_id: response.cell_id(),
-        public_ip: response.public_ip.ip.as_ref().and_then(|ip| match &ip {
-            cmsg_ipaddress::Ip::V4(bits) => Some(IpAddr::V4(Ipv4Addr::from(*bits))),
-            cmsg_ipaddress::Ip::V6(bytes) if bytes.len() == 16 => {
-                let mut bits = [0u8; 16];
-                bits.copy_from_slice(&bytes[..]);
-                Some(IpAddr::V6(Ipv6Addr::from(bits)))
-            }
-            _ => None,
-        }),
-        ip_country_code: response.ip_country_code.clone(),
-        steam_id: Some(assigned_steam_id),
-        job_id: JobIdCounter::default(),
-        heartbeat_interval: Duration::from_secs(response.heartbeat_seconds() as u64),
-        app_id: None,
-        refresh_token,
+        session: RawSession {
+            session_id: header.session_id,
+            cell_id: response.cell_id(),
+            job_id: JobIdCounter::default(),
+            heartbeat_interval: Duration::from_secs(response.heartbeat_seconds() as u64),
+        },
+        auth: SessionAuthenticationDetails {
+            public_ip: response
+                .public_ip
+                .ip
+                .as_ref()
+                .and_then(|ip| match &ip {
+                    cmsg_ipaddress::Ip::V4(bits) => Some(IpAddr::V4(Ipv4Addr::from(*bits))),
+                    cmsg_ipaddress::Ip::V6(bytes) if bytes.len() == 16 => {
+                        let mut bits = [0u8; 16];
+                        bits.copy_from_slice(&bytes[..]);
+                        Some(IpAddr::V6(Ipv6Addr::from(bits)))
+                    }
+                    _ => None,
+                })
+                .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+            ip_country_code: response.ip_country_code.clone().unwrap_or_default(),
+            steam_id: assigned_steam_id,
+            app_id: None,
+            refresh_token,
+        },
     })
 }
 
