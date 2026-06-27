@@ -1,3 +1,4 @@
+mod client;
 mod confirmation;
 mod guard_data;
 
@@ -8,6 +9,7 @@ use crate::net::NetworkError;
 use crate::session::{ConnectionError, LoginError};
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+pub use client::*;
 pub use confirmation::*;
 use futures_util::future::{Either, select};
 pub use guard_data::*;
@@ -27,7 +29,6 @@ use steam_vent_proto_steam::steammessages_auth_steamclient::{
     CAuthentication_BeginAuthSessionViaCredentials_Response, CAuthentication_DeviceDetails,
     CAuthentication_PollAuthSessionStatus_Request, CAuthentication_PollAuthSessionStatus_Response,
     CAuthentication_UpdateAuthSessionWithSteamGuardCode_Request, EAuthSessionGuardType,
-    EAuthTokenPlatformType,
 };
 use thiserror::Error;
 use tokio::time::{sleep, timeout};
@@ -38,6 +39,7 @@ pub(crate) async fn begin_password_auth(
     account: &str,
     password: &str,
     guard_data: Option<&str>,
+    client_info: &ClientInfo,
 ) -> Result<StartedAuth, ConnectionError> {
     let (pub_key, timestamp) = get_password_rsa(connection, account.into()).await?;
     let encrypted_password =
@@ -55,11 +57,10 @@ pub(crate) async fn begin_password_auth(
         // todo: platform types
         website_id: Some("Client".into()),
         device_details: MessageField::some(CAuthentication_DeviceDetails {
-            device_friendly_name: Some("DESKTOP-VENT".into()),
-            platform_type: Some(EnumOrUnknown::new(
-                EAuthTokenPlatformType::k_EAuthTokenPlatformType_SteamClient,
-            )),
-            os_type: Some(1),
+            device_friendly_name: Some(client_info.name.clone()),
+            platform_type: Some(EnumOrUnknown::new(client_info.platform_type)),
+            os_type: Some(client_info.os.into()),
+            machine_id: Some(client_info.machine_id.encode()),
             ..CAuthentication_DeviceDetails::default()
         }),
         guard_data: guard_data.map(String::from),

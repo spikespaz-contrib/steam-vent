@@ -1,7 +1,7 @@
 use std::env::args;
 use std::error::Error;
 use steam_vent::auth::{
-    AuthConfirmationHandler, ConsoleAuthConfirmationHandler, DeviceConfirmationHandler,
+    AuthConfirmationHandler, ClientInfo, ConsoleAuthConfirmationHandler, DeviceConfirmationHandler,
     FileGuardDataStore, SharedSecretAuthConfirmationHandler,
 };
 use steam_vent::{Connection, ConnectionTrait, ServerList};
@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let server_list = ServerList::discover().await?;
 
-    let confirmation = match guard_secret {
+    let mut confirmation = match guard_secret {
         Some(secret) => SharedSecretAuthConfirmationHandler::new(&secret).boxed(),
         None => (
             ConsoleAuthConfirmationHandler::default(),
@@ -33,7 +33,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &account,
         &password,
         FileGuardDataStore::user_cache(),
-        confirmation,
+        &mut confirmation,
+        &ClientInfo::default(),
     )
     .await?;
 

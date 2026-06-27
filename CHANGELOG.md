@@ -10,6 +10,8 @@
   slices of confirmation handlers instead.
 - `AuthConfirmationHandler::handle_confirmation` now takes `&mut self` instead
   of `self` and returns a boxed future.
+- `login` methods now take a `ClientInfo` to allow customizing how the
+  steam-vent presents itself to steam.
 
 #### Connection
 

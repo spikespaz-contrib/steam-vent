@@ -1,7 +1,7 @@
 use super::Result;
 use super::raw::RawConnection;
 use crate::auth::{
-    AuthConfirmationHandler, GuardDataStore, begin_password_auth, perform_confirmation,
+    AuthConfirmationHandler, ClientInfo, GuardDataStore, begin_password_auth, perform_confirmation,
 };
 use crate::message::{ServiceMethodMessage, ServiceMethodResponseMessage};
 use crate::net::RawNetMessage;
@@ -105,6 +105,7 @@ impl UnAuthenticatedConnection {
         password: &str,
         mut guard_data_store: G,
         mut confirmation_handler: H,
+        client_info: &ClientInfo,
     ) -> Result<Connection, ConnectionError> {
         let mut raw = self.0;
         let guard_data = guard_data_store.load(account).await.unwrap_or_else(|e| {
@@ -114,7 +115,14 @@ impl UnAuthenticatedConnection {
         if guard_data.is_some() {
             debug!(account, "found stored guard data");
         }
-        let begin = begin_password_auth(&mut raw, account, password, guard_data.as_deref()).await?;
+        let begin = begin_password_auth(
+            &mut raw,
+            account,
+            password,
+            guard_data.as_deref(),
+            client_info,
+        )
+        .await?;
         let steam_id = SteamID::from_steam64(begin.steam_id()).map_err(LoginError::from)?;
 
         let allowed_confirmations = begin.allowed_confirmations();
@@ -140,6 +148,8 @@ impl UnAuthenticatedConnection {
             && let Err(e) = guard_data_store.store(account, guard_data).await
         {
             error!(error = ?e, "failed to store guard data");
+        } else {
+            debug!("no guard data received");
         }
 
         raw.session = login(

@@ -3,7 +3,7 @@ pub(crate) mod raw;
 pub(crate) mod unauthenticated;
 
 use crate::GameCoordinator;
-use crate::auth::{AuthConfirmationHandler, GuardDataStore};
+use crate::auth::{AuthConfirmationHandler, ClientInfo, GuardDataStore};
 use crate::message::{ServiceMethodMessage, ServiceMethodResponseMessage};
 use crate::net::{NetworkError, RawNetMessage};
 use crate::serverlist::ServerList;
@@ -86,10 +86,17 @@ impl Connection {
         password: &str,
         guard_data_store: G,
         confirmation_handler: H,
+        client_info: &ClientInfo,
     ) -> Result<Self, ConnectionError> {
         UnAuthenticatedConnection::connect(server_list)
             .await?
-            .login(account, password, guard_data_store, confirmation_handler)
+            .login(
+                account,
+                password,
+                guard_data_store,
+                confirmation_handler,
+                client_info,
+            )
             .await
     }
 

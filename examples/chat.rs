@@ -3,7 +3,7 @@ use std::error::Error;
 use std::io::stdin;
 use std::str::FromStr;
 use steam_vent::auth::{
-    ConsoleAuthConfirmationHandler, DeviceConfirmationHandler, FileGuardDataStore,
+    ClientInfo, ConsoleAuthConfirmationHandler, DeviceConfirmationHandler, FileGuardDataStore,
 };
 use steam_vent::{Connection, ConnectionTrait, ServerList};
 use steam_vent_proto::enums::EPersonaStateFlag;
@@ -35,6 +35,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             ConsoleAuthConfirmationHandler::default(),
             DeviceConfirmationHandler,
         ),
+        &ClientInfo::default(),
     )
     .await?;
 
