@@ -2,6 +2,7 @@ use std::env::args;
 use std::error::Error;
 use steam_vent::auth::{
     ClientInfo, ConsoleAuthConfirmationHandler, DeviceConfirmationHandler, FileGuardDataStore,
+    RefreshToken,
 };
 use steam_vent::{Connection, ConnectionTrait, ServerList};
 use steam_vent_proto::steammessages_player_steamclient::CPlayer_GetOwnedGames_Request;
@@ -13,18 +14,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut args = args().skip(1);
     let account = args.next().expect("no account");
     let password = args.next().expect("no password");
-    let access_token = args.next();
+    let refresh_token = args.next();
 
     let server_list = ServerList::discover().await?;
-    let connection = match access_token {
-        Some(access_token) => match Connection::access(&server_list, &account, &access_token).await
-        {
-            Ok(connection) => Some(connection),
-            Err(error) => {
-                eprintln!("connection using access token failed: {error}");
-                None // Fallback to password
+    let connection = match refresh_token {
+        Some(token) => {
+            let token = RefreshToken::new(token)?;
+            match Connection::login_with_refresh_token(&server_list, &token).await {
+                Ok(connection) => {
+                    if let Some(new_token) = connection.refresh_token()
+                        && &token != new_token
+                    {
+                        println!("new token for future use: {}", token.token());
+                    }
+
+                    Some(connection)
+                }
+                Err(error) => {
+                    eprintln!("connection using access token failed: {error}");
+                    None // Fallback to password
+                }
             }
-        },
+        }
         None => None,
     };
 
@@ -44,10 +55,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .await?;
 
-        println!(
-            "access token for future use: {:?}",
-            connection.access_token()
-        );
+        if let Some(token) = connection.refresh_token() {
+            println!("refresh token for future use: {}", token.token());
+        } else {
+            println!("No refresh token received from steam")
+        }
 
         connection
     };

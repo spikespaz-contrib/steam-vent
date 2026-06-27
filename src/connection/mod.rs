@@ -3,7 +3,7 @@ pub(crate) mod raw;
 pub(crate) mod unauthenticated;
 
 use crate::GameCoordinator;
-use crate::auth::{AuthConfirmationHandler, ClientInfo, GuardDataStore};
+use crate::auth::{AuthConfirmationHandler, ClientInfo, GuardDataStore, RefreshToken};
 use crate::message::{ServiceMethodMessage, ServiceMethodResponseMessage};
 use crate::net::{NetworkError, RawNetMessage};
 use crate::serverlist::ServerList;
@@ -100,19 +100,18 @@ impl Connection {
             .await
     }
 
-    pub async fn access(
+    pub async fn login_with_refresh_token(
         server_list: &ServerList,
-        account: &str,
-        access_token: &str,
+        token: &RefreshToken,
     ) -> Result<Self, ConnectionError> {
         UnAuthenticatedConnection::connect(server_list)
             .await?
-            .access(account, access_token)
+            .login_with_refresh_token(token)
             .await
     }
 
-    pub fn access_token(&self) -> Option<&str> {
-        self.session().access_token.as_deref()
+    pub fn refresh_token(&self) -> Option<&RefreshToken> {
+        self.session().refresh_token.as_ref()
     }
 
     pub fn steam_id(&self) -> SteamID {

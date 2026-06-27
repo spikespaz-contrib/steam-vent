@@ -8,7 +8,7 @@ use crate::message::MalformedBody;
 use crate::net::NetworkError;
 use crate::session::{ConnectionError, LoginError};
 use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
+use base64::prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD};
 pub use client::*;
 pub use confirmation::*;
 use futures_util::future::{Either, select};
@@ -16,9 +16,10 @@ pub use guard_data::*;
 use num_bigint_dig::BigUint;
 use num_traits::Num;
 use rsa::RsaPublicKey;
+use serde::Deserialize;
 use std::io::{Error as IoError, ErrorKind};
 use std::pin::pin;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use steam_vent_crypto::encrypt_with_key_pkcs1;
 use steam_vent_proto_common::protobuf::{EnumOrUnknown, MessageField};
 use steam_vent_proto_steam::enums::ESessionPersistence;
@@ -30,6 +31,7 @@ use steam_vent_proto_steam::steammessages_auth_steamclient::{
     CAuthentication_PollAuthSessionStatus_Request, CAuthentication_PollAuthSessionStatus_Response,
     CAuthentication_UpdateAuthSessionWithSteamGuardCode_Request, EAuthSessionGuardType,
 };
+use steamid_ng::SteamID;
 use thiserror::Error;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, info, instrument};
@@ -348,4 +350,87 @@ pub(crate) async fn perform_confirmation<C: AuthConfirmationHandler>(
         }
         Either::Right((tokens, _)) => Some(tokens.map_err(ConnectionError::from)),
     }
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct RefreshToken {
+    raw: String,
+    pub subject: SteamID,
+    pub expiration: SystemTime,
+}
+
+impl RefreshToken {
+    /// Validate the access token and extract the subject and expiration date
+    pub fn new(raw: String) -> Result<RefreshToken, RefreshTokenError> {
+        /// JWT access token payload descriptor.
+        #[derive(Deserialize)]
+        pub struct RawAccessToken<'a> {
+            sub: &'a str,
+            iss: &'a str,
+            exp: u64,
+        }
+
+        let base64 = raw
+            .split('.')
+            .nth(1)
+            .ok_or(RefreshTokenError::Malformed("token not formatted as JWT"))?;
+        let json = BASE64_URL_SAFE_NO_PAD
+            .decode(base64)
+            .map_err(|_| RefreshTokenError::Malformed("token contains invalid base64 payload"))?;
+
+        let token = serde_json::from_slice::<RawAccessToken>(&json)
+            .map_err(|_| RefreshTokenError::Malformed("token contains invalid json payload"))?;
+
+        if token.iss != "steam" {
+            return Err(RefreshTokenError::InvalidIssuer);
+        }
+
+        // TODO: Consider adding `AccessToken.exp` check (expiration UNIX timestamp in seconds).
+
+        let subject = SteamID::from_steam64(
+            token
+                .sub
+                .parse()
+                .map_err(|_| RefreshTokenError::InvalidSubject)?,
+        )
+        .map_err(|_| RefreshTokenError::InvalidSubject)?;
+
+        Ok(RefreshToken {
+            raw,
+            subject,
+            expiration: SystemTime::UNIX_EPOCH + Duration::from_secs(token.exp),
+        })
+    }
+
+    /// Get the raw token to use for authentiaction or storage
+    pub fn token(&self) -> &str {
+        &self.raw
+    }
+
+    /// How much longer is this token valid for or `None` is the token is already expired
+    pub fn remaining_lifetime(&self) -> Option<Duration> {
+        self.expiration.duration_since(SystemTime::now()).ok()
+    }
+
+    /// Check if the token is expired
+    pub fn expired(&self) -> bool {
+        self.remaining_lifetime().is_none()
+    }
+}
+
+impl PartialEq for RefreshToken {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw == other.raw
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum RefreshTokenError {
+    #[error("malformed token supplied: {0}")]
+    Malformed(&'static str),
+    #[error("invalid issuer")]
+    InvalidIssuer,
+    #[error("invalid subject steam id")]
+    InvalidSubject,
 }

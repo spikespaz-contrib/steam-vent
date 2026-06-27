@@ -12,6 +12,9 @@
   of `self` and returns a boxed future.
 - `login` methods now take a `ClientInfo` to allow customizing how the
   steam-vent presents itself to steam.
+- Authenticating with an existing refresh token now requires parsing the raw
+  token into a `AccessToken` before using it. And the naming has been fixed from
+  using "access token" to "refresh token".
 
 #### Connection
 

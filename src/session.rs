@@ -1,7 +1,6 @@
-use crate::auth::{ConfirmationError, ConfirmationMethod};
+use crate::auth::{ConfirmationError, ConfirmationMethod, RefreshToken, RefreshTokenError};
 use crate::connection::ConnectionImpl;
 use crate::connection::raw::RawConnection;
-use crate::connection::unauthenticated::AccessTokenError;
 use crate::eresult::EResult;
 use crate::net::NetworkError;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -28,7 +27,7 @@ type Result<T, E = ConnectionError> = std::result::Result<T, E>;
 #[non_exhaustive]
 pub enum ConnectionError {
     #[error("Access token error: {0:#}")]
-    AccessToken(#[from] AccessTokenError),
+    AccessToken(#[from] RefreshTokenError),
     #[error("Network error: {0:#}")]
     Network(#[from] NetworkError),
     #[error("Login failed: {0:#}")]
@@ -65,6 +64,8 @@ pub enum LoginError {
     RateLimited,
     #[error("invalid steam id")]
     InvalidSteamId,
+    #[error("refresh token is expired")]
+    ExpiredToken,
 }
 
 impl From<EResult> for LoginError {
@@ -118,7 +119,7 @@ pub struct Session {
     pub steam_id: Option<SteamID>,
     pub heartbeat_interval: Duration,
     pub app_id: Option<u32>,
-    pub access_token: Option<String>,
+    pub refresh_token: Option<RefreshToken>,
 }
 
 impl Default for Session {
@@ -132,7 +133,7 @@ impl Default for Session {
             steam_id: None,
             heartbeat_interval: Duration::from_secs(15),
             app_id: None,
-            access_token: None,
+            refresh_token: None,
         }
     }
 }
@@ -200,9 +201,9 @@ pub async fn anonymous(connection: &RawConnection, account_type: AccountType) ->
 
 pub async fn login(
     connection: &mut RawConnection,
-    account: &str,
+    account: Option<&str>,
     steam_id: SteamID,
-    access_token: &str,
+    refresh_token: &str,
 ) -> Result<Session> {
     let mut ip = CMsgIPAddress::new();
     ip.set_v4(0);
@@ -210,14 +211,14 @@ pub async fn login(
     let logon = CMsgClientLogon {
         protocol_version: Some(65580),
         client_os_type: Some(203),
-        account_name: Some(String::from(account)),
+        account_name: account.map(String::from),
         supports_rate_limit_response: Some(false),
         obfuscated_private_ip: MessageField::some(ip),
         client_language: Some(String::new()),
         machine_name: Some(String::new()),
         steamguard_dont_remember_computer: Some(false),
         chat_mode: Some(2),
-        access_token: Some(access_token.into()),
+        access_token: Some(refresh_token.into()),
         client_package_version: Some(1771),
         ..CMsgClientLogon::default()
     };
@@ -230,7 +231,11 @@ async fn send_logon(
     logon: CMsgClientLogon,
     steam_id: SteamID,
 ) -> Result<Session> {
-    let access_token = logon.access_token.clone();
+    let refresh_token = logon
+        .access_token
+        .clone()
+        .map(RefreshToken::new)
+        .transpose()?;
 
     let header = NetMessageHeader {
         source_job_id: JobId::NONE,
@@ -275,7 +280,7 @@ async fn send_logon(
         job_id: JobIdCounter::default(),
         heartbeat_interval: Duration::from_secs(response.heartbeat_seconds() as u64),
         app_id: None,
-        access_token,
+        refresh_token,
     })
 }
 

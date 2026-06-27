@@ -1,18 +1,16 @@
 use super::Result;
 use super::raw::RawConnection;
 use crate::auth::{
-    AuthConfirmationHandler, ClientInfo, GuardDataStore, begin_password_auth, perform_confirmation,
+    AuthConfirmationHandler, ClientInfo, GuardDataStore, RefreshToken, begin_password_auth,
+    perform_confirmation,
 };
 use crate::message::{ServiceMethodMessage, ServiceMethodResponseMessage};
 use crate::net::RawNetMessage;
 use crate::session::{anonymous, login};
 use crate::{Connection, ConnectionError, EResult, LoginError, NetworkError, ServerList};
-use base64::Engine;
-use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use bytes::BytesMut;
 use futures_util::Stream;
 use futures_util::{FutureExt, Sink};
-use serde::Deserialize;
 use std::future::Future;
 use steam_vent_core::{
     NetMessageHeader, ReadonlyConnection, ReceivableMessage, ServiceMethodRequest,
@@ -20,36 +18,10 @@ use steam_vent_core::{
 };
 use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steamid_ng::{AccountType, SteamID};
-use thiserror::Error;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 use tracing::{debug, error};
-
-/// JWT access token payload descriptor.
-#[derive(Deserialize)]
-#[non_exhaustive]
-pub struct AccessToken {
-    pub iss: String,
-    pub sub: String,
-    #[allow(dead_code)]
-    pub exp: u64,
-    // ..extra unused fields
-}
-
-#[derive(Debug, Error)]
-pub enum AccessTokenError {
-    #[error("expired")]
-    Expired,
-    #[error("malformed token supplied")]
-    Malformed,
-    #[error("invalid issuer")]
-    InvalidIssuer,
-    #[error("{0:#}")]
-    Base64(#[from] base64::DecodeError),
-    #[error("{0:#}")]
-    Json(#[from] serde_json::Error),
-}
 
 /// A Connection that hasn't been authentication yet
 pub struct UnAuthenticatedConnection(RawConnection);
@@ -154,9 +126,8 @@ impl UnAuthenticatedConnection {
 
         raw.session = login(
             &mut raw,
-            account,
+            Some(account),
             steam_id,
-            // yes we send the refresh token as access token, yes it makes no sense, yes this is actually required
             tokens.refresh_token.as_ref(),
         )
         .await?;
@@ -167,48 +138,17 @@ impl UnAuthenticatedConnection {
     }
 
     /// Start a client session with this connection using access token.
-    pub async fn access(
+    pub async fn login_with_refresh_token(
         self,
-        account: &str,
-        access_token: &str,
+        token: &RefreshToken,
     ) -> Result<Connection, ConnectionError> {
         let mut raw = self.0;
 
-        let access_token_payload = access_token
-            .split('.')
-            .nth(1)
-            .ok_or_else(|| ConnectionError::AccessToken(AccessTokenError::Malformed))
-            .and_then(|base64| {
-                BASE64_URL_SAFE_NO_PAD
-                    .decode(base64)
-                    .map_err(|error| ConnectionError::AccessToken(AccessTokenError::Base64(error)))
-            })
-            .and_then(|json| {
-                serde_json::from_slice::<AccessToken>(&json)
-                    .map_err(|error| ConnectionError::AccessToken(AccessTokenError::Json(error)))
-            })?;
-
-        if access_token_payload.iss != "steam" {
-            return Err(ConnectionError::AccessToken(
-                AccessTokenError::InvalidIssuer,
-            ));
+        if token.expired() {
+            return Err(LoginError::ExpiredToken.into());
         }
 
-        // TODO: Consider adding `AccessToken.exp` check (expiration UNIX timestamp in seconds).
-
-        raw.session = login(
-            &mut raw,
-            account,
-            SteamID::from_steam64(
-                access_token_payload
-                    .sub
-                    .parse()
-                    .map_err(|_| ConnectionError::LoginError(LoginError::InvalidSteamId))?,
-            )
-            .map_err(|_| ConnectionError::LoginError(LoginError::InvalidSteamId))?,
-            access_token,
-        )
-        .await?;
+        raw.session = login(&mut raw, None, token.subject, token.token()).await?;
         raw.setup_heartbeat();
         Ok(Connection::new(raw))
     }
