@@ -15,13 +15,32 @@ pub trait GuardDataStore {
         &mut self,
         account: &str,
         machine_token: String,
-    ) -> impl std::future::Future<Output = Result<(), Self::Err>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
 
     /// Retrieve the stored token for an account
     fn load(
         &mut self,
         account: &str,
-    ) -> impl std::future::Future<Output = Result<Option<String>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Option<String>, Self::Err>> + Send;
+}
+
+impl<Store: GuardDataStore> GuardDataStore for &mut Store {
+    type Err = Store::Err;
+
+    fn store(
+        &mut self,
+        account: &str,
+        machine_token: String,
+    ) -> impl Future<Output = Result<(), Self::Err>> + Send {
+        (**self).store(account, machine_token)
+    }
+
+    fn load(
+        &mut self,
+        account: &str,
+    ) -> impl Future<Output = Result<Option<String>, Self::Err>> + Send {
+        (**self).load(account)
+    }
 }
 
 /// Error while storing or loading guard data from json file

@@ -168,6 +168,15 @@ pub trait AuthConfirmationHandler {
     }
 }
 
+impl<Handler: AuthConfirmationHandler> AuthConfirmationHandler for &mut Handler {
+    fn handle_confirmation<'this>(
+        &'this mut self,
+        allowed_confirmations: &[ConfirmationMethod],
+    ) -> Box<dyn Future<Output = Option<ConfirmationAction>> + 'this> {
+        (**self).handle_confirmation(allowed_confirmations)
+    }
+}
+
 /// Ask the user for the totp token from the terminal
 pub type ConsoleAuthConfirmationHandler = UserProvidedAuthConfirmationHandler<Stdin, Stdout>;
 
