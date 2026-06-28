@@ -1,3 +1,5 @@
+//! If you're looking to implement steam chat, you'll probably want to look at https://codeberg.org/steam-vent/chat instead of copying this example.
+
 use std::env::args;
 use std::error::Error;
 use std::io::stdin;
