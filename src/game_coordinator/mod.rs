@@ -3,7 +3,7 @@ pub mod handshake;
 use crate::connection::{ConnectionImpl, MessageFilter, MessageSender};
 use crate::net::{RawNetMessage, decode_kind, header_encode_size, write_header};
 use crate::session::{RawSession, SessionAuthenticationDetails};
-use crate::{Connection, NetworkError};
+use crate::{Connection, GenericGCHandshake, NetworkError};
 use futures_util::future::{Either, select};
 use std::fmt::{Debug, Formatter};
 use std::pin::pin;
@@ -17,7 +17,6 @@ use steam_vent_proto_steam::enums_clientserver::EMsg;
 use steam_vent_proto_steam::steammessages_clientserver::CMsgClientGamesPlayed;
 use steam_vent_proto_steam::steammessages_clientserver::cmsg_client_games_played::GamePlayed;
 use steam_vent_proto_steam::steammessages_clientserver_2::CMsgGCClient;
-use steam_vent_proto_steam::steammessages_clientserver_login::CMsgClientHello;
 use tokio::spawn;
 use tokio::sync::mpsc::channel;
 use tokio::time::sleep;
@@ -25,6 +24,7 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::debug;
 
+/// A connection for communicating with a game coordinator trough the steam network
 pub struct GameCoordinator {
     app_id: u32,
     filter: MessageFilter,
@@ -83,7 +83,7 @@ impl Debug for GameCoordinator {
 impl GameCoordinator {
     /// Create new `GameCoordinator` with the default handshake
     pub async fn new(connection: &Connection, app_id: u32) -> Result<Self, NetworkError> {
-        let (gc, _) = Self::init_raw(connection, app_id, CMsgClientHello::default).await?;
+        let (gc, _) = Self::init_raw(connection, &GenericGCHandshake::new(app_id)).await?;
         Ok(gc)
     }
 
@@ -92,7 +92,7 @@ impl GameCoordinator {
         connection: &Connection,
         app_id: u32,
     ) -> Result<(Self, Welcome), NetworkError> {
-        let (gc, welcome) = Self::init_raw(connection, app_id, CMsgClientHello::default).await?;
+        let (gc, welcome) = Self::init_raw(connection, &GenericGCHandshake::new(app_id)).await?;
         Ok((gc, welcome.into_message()?))
     }
 
@@ -101,16 +101,15 @@ impl GameCoordinator {
         connection: &Connection,
         handshake: &Handshake,
     ) -> Result<(Self, Handshake::Welcome), NetworkError> {
-        let (gc, welcome) =
-            Self::init_raw(connection, handshake.app_id(), || handshake.hello()).await?;
+        let (gc, welcome) = Self::init_raw(connection, handshake).await?;
         Ok((gc, welcome.into_message()?))
     }
 
-    async fn init_raw<HelloMsg: SendableMessage, HelloFn: Fn() -> HelloMsg>(
+    async fn init_raw<Handshake: GCHandshake>(
         connection: &Connection,
-        app_id: u32,
-        hello_msg: HelloFn,
+        handshake: &Handshake,
     ) -> Result<(Self, RawNetMessage), NetworkError> {
+        let app_id = handshake.app_id();
         let (tx, rx) = channel(10);
         let filter = MessageFilter::new(ReceiverStream::new(rx));
         let gc_messages = connection.on::<ClientFromGcMessage>();
@@ -155,7 +154,7 @@ impl GameCoordinator {
         let welcome = gc.wait_welcome();
         let hello_sender = async {
             loop {
-                if let Err(e) = gc.send_hello(&hello_msg).await {
+                if let Err(e) = gc.send_hello(handshake.hello()).await {
                     return Result::<(), _>::Err(e);
                 };
                 sleep(Duration::from_secs(5)).await;
@@ -171,11 +170,10 @@ impl GameCoordinator {
         Ok((gc, welcome))
     }
 
-    async fn send_hello<HelloMsg: SendableMessage, HelloFn: Fn() -> HelloMsg>(
+    async fn send_hello<HelloMsg: SendableMessage>(
         &self,
-        hello_fn: HelloFn,
+        hello: HelloMsg,
     ) -> Result<(), NetworkError> {
-        let hello = hello_fn();
         let is_protobuf = hello.is_protobuf();
         if self.auth.is_server() {
             self.send(hello.with_kind(GCMsgKind::k_EMsgGCServerHello, is_protobuf))

@@ -4,18 +4,18 @@ use steam_vent_proto_steam::steammessages_clientserver_login::CMsgClientHello;
 
 use crate::game_coordinator::GCMsgKind;
 
+/// A generic handshake implementation for connecting to game coordinators.
+///
+/// Game-specific handshake implementation can generally be found in the game-specific protobuf packages.
+/// Those can be more reliable for establishing a connection.
 pub struct GenericGCHandshake {
     pub app_id: u32,
-    pub hello: CMsgClientHello,
 }
 
 impl GenericGCHandshake {
     #[must_use]
     pub fn new(app_id: u32) -> Self {
-        Self {
-            app_id,
-            hello: CMsgClientHello::default(),
-        }
+        Self { app_id }
     }
 }
 
@@ -29,7 +29,7 @@ impl GCHandshake for GenericGCHandshake {
     }
 
     fn hello(&self) -> Self::Hello {
-        self.hello.clone()
+        CMsgClientHello::default()
     }
 }
 
