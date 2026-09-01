@@ -37,7 +37,7 @@ impl Default for ClientInfo {
 }
 
 /// Client OS type
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Os {
     Web,
     Linux,
@@ -46,6 +46,10 @@ pub enum Os {
     Windows,
 }
 
+/// The Steam `EOSType` value for this OS.
+///
+/// This is the wire mapping only. `Os` is persisted by variant name, so this
+/// conversion is never part of the serde round-trip.
 impl From<Os> for i32 {
     fn from(value: Os) -> Self {
         match value {
@@ -53,20 +57,6 @@ impl From<Os> for i32 {
             Os::Linux => -203,
             Os::MacOs => -102,
             Os::Windows => 0,
-        }
-    }
-}
-
-impl TryFrom<i32> for Os {
-    type Error = ();
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            -700 => Ok(Os::Web),
-            -203 => Ok(Os::Linux),
-            -102 => Ok(Os::MacOs),
-            0 => Ok(Os::Windows),
-            _ => Err(()),
         }
     }
 }
@@ -106,7 +96,7 @@ impl From<ClientInfo> for RawClientInfo {
         RawClientInfo {
             platform_type: value.platform_type.value(),
             name: value.name,
-            os: value.os as i32,
+            os: value.os,
             machine_id_value_bb3: value.machine_id.id.value_bb3,
             machine_id_value_ff2: value.machine_id.id.value_ff2,
             machine_id_value_3b3: value.machine_id.id.value_3b3,
@@ -120,7 +110,7 @@ impl From<RawClientInfo> for ClientInfo {
             platform_type: EAuthTokenPlatformType::from_i32(value.platform_type)
                 .unwrap_or_default(),
             name: value.name,
-            os: value.os.try_into().unwrap_or_default(),
+            os: value.os,
             machine_id: MachineId {
                 id: MachineID {
                     value_bb3: value.machine_id_value_bb3,
@@ -137,8 +127,32 @@ impl From<RawClientInfo> for ClientInfo {
 struct RawClientInfo {
     platform_type: i32,
     name: String,
-    os: i32,
+    os: Os,
     machine_id_value_bb3: [u8; 20],
     machine_id_value_ff2: [u8; 20],
     machine_id_value_3b3: [u8; 20],
+}
+
+#[test]
+fn test_client_info_os_round_trip() {
+    for os in [Os::Web, Os::Linux, Os::MacOs, Os::Windows] {
+        let info = ClientInfo {
+            os,
+            ..ClientInfo::default()
+        };
+
+        let json = serde_json::to_string(&info).expect("client info should serialize");
+
+        // Persisting the variant name, not a number, is the point: the
+        // `EOSType` values belong to the wire and must not leak into the
+        // stored form.
+        assert!(
+            json.contains(&format!("\"os\":\"{os:?}\"")),
+            "expected {os:?} to persist by variant name, got {json}"
+        );
+
+        let restored: ClientInfo =
+            serde_json::from_str(&json).expect("client info should deserialize");
+        assert_eq!(os, restored.os, "{os:?} did not survive the round trip");
+    }
 }
