@@ -1,10 +1,17 @@
-use num_enum::TryFromPrimitive;
-use std::convert::TryFrom;
+use num_enum::{FromPrimitive, IntoPrimitive};
 
-#[derive(TryFromPrimitive, Debug, Copy, Clone)]
+/// A Steam result code.
+///
+/// Valve documents no meaning for these codes. Unless a variant says
+/// otherwise, its name is the whole of what is known about it.
+#[derive(FromPrimitive, IntoPrimitive, Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(i32)]
 #[non_exhaustive]
 pub enum EResult {
+    /// Valve's name for code 0.
+    ///
+    /// Not a result Steam is observed to send, and not what an absent result
+    /// decodes to -- `eresult` fields declare a default of [`EResult::Fail`].
     Invalid = 0,
     OK = 1,
     Fail = 2,
@@ -133,14 +140,41 @@ pub enum EResult {
     NoLauncherSpecified = 117,
     MustAgreeToSSA = 118,
     ClientNoLongerSupported = 119,
+    /// A code with no name in this table; the payload is the code itself.
+    ///
+    /// Not one of Valve's variants. Its own discriminant is `i32::MIN`, outside
+    /// the range Valve's codes occupy.
+    #[num_enum(catch_all)]
+    Unknown(i32) = i32::MIN,
 }
 
 impl EResult {
     pub fn from_result(result: i32) -> Result<(), EResult> {
-        let result = EResult::try_from(result).unwrap_or(EResult::Invalid);
-        match result {
+        match EResult::from(result) {
             EResult::OK => Ok(()),
             err => Err(err),
         }
     }
+}
+
+#[test]
+fn test_unknown_code_keeps_its_number() {
+    // A code with no name here round-trips as its own value.
+    assert!(matches!(
+        EResult::from_result(9999),
+        Err(EResult::Unknown(9999))
+    ));
+    assert_eq!(9999, i32::from(EResult::Unknown(9999)));
+
+    // `Unknown`'s own discriminant is carried as data like any other code.
+    assert!(matches!(
+        EResult::from(i32::MIN),
+        EResult::Unknown(i32::MIN)
+    ));
+
+    // Named codes map both ways, and only `OK` is a success.
+    assert_eq!(EResult::RateLimitExceeded, EResult::from(84));
+    assert_eq!(84, i32::from(EResult::RateLimitExceeded));
+    assert_eq!(Ok(()), EResult::from_result(1));
+    assert_eq!(Err(EResult::Invalid), EResult::from_result(0));
 }
