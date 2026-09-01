@@ -149,8 +149,9 @@ pub enum EResult {
 }
 
 impl EResult {
-    pub fn from_result(result: i32) -> Result<(), EResult> {
-        match EResult::from(result) {
+    /// `Ok(())` for [`EResult::OK`], otherwise this code as the error.
+    pub fn into_result(self) -> Result<(), EResult> {
+        match self {
             EResult::OK => Ok(()),
             err => Err(err),
         }
@@ -161,7 +162,7 @@ impl EResult {
 fn test_unknown_code_keeps_its_number() {
     // A code with no name here round-trips as its own value.
     assert!(matches!(
-        EResult::from_result(9999),
+        EResult::from(9999).into_result(),
         Err(EResult::Unknown(9999))
     ));
     assert_eq!(9999, i32::from(EResult::Unknown(9999)));
@@ -175,6 +176,6 @@ fn test_unknown_code_keeps_its_number() {
     // Named codes map both ways, and only `OK` is a success.
     assert_eq!(EResult::RateLimitExceeded, EResult::from(84));
     assert_eq!(84, i32::from(EResult::RateLimitExceeded));
-    assert_eq!(Ok(()), EResult::from_result(1));
-    assert_eq!(Err(EResult::Invalid), EResult::from_result(0));
+    assert_eq!(Ok(()), EResult::from(1).into_result());
+    assert_eq!(Err(EResult::Invalid), EResult::from(0).into_result());
 }
