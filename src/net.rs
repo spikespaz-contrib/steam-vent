@@ -312,7 +312,7 @@ impl RawNetMessage {
 impl RawNetMessage {
     pub fn into_header_and_message<T: ReceivableMessage>(self) -> Result<(NetMessageHeader, T)> {
         if let Some(result) = self.header.result {
-            EResult::from_result(result)?;
+            EResult::from(result).into_result()?;
         }
         if self.kind == T::KIND {
             trace!(
