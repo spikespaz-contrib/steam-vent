@@ -1,3 +1,4 @@
+use num_enum::IntoPrimitive;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use steam_machine_id::MachineID;
@@ -37,28 +38,19 @@ impl Default for ClientInfo {
 }
 
 /// Client OS type
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
-pub enum Os {
-    Web,
-    Linux,
-    MacOs,
-    #[default]
-    Windows,
-}
-
-/// The Steam `EOSType` value for this OS.
 ///
-/// This is the wire mapping only. `Os` is persisted by variant name, so this
-/// conversion is never part of the serde round-trip.
-impl From<Os> for i32 {
-    fn from(value: Os) -> Self {
-        match value {
-            Os::Web => -700,
-            Os::Linux => -203,
-            Os::MacOs => -102,
-            Os::Windows => 0,
-        }
-    }
+/// The discriminants are Steam's `EOSType` values, and are the wire form only:
+/// `Os` is persisted by variant name, so they never appear in the serde round
+/// trip. `From<Os> for i32` is derived from them, so a cast and the conversion
+/// cannot disagree.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, IntoPrimitive)]
+#[repr(i32)]
+pub enum Os {
+    Web = -700,
+    Linux = -203,
+    MacOs = -102,
+    #[default]
+    Windows = 0,
 }
 
 /// Unique identifier for the machine
@@ -155,4 +147,15 @@ fn test_client_info_os_round_trip() {
             serde_json::from_str(&json).expect("client info should deserialize");
         assert_eq!(os, restored.os, "{os:?} did not survive the round trip");
     }
+}
+
+#[test]
+fn test_os_eos_type_values() {
+    // Confirmed against SteamKit (Base/Generated/SteamLanguage.cs, generated
+    // from Valve's own definitions) and node-steam-session
+    // (src/enums-steam/EOSType.ts); both agree exactly.
+    assert_eq!(-700, i32::from(Os::Web));
+    assert_eq!(-203, i32::from(Os::Linux));
+    assert_eq!(-102, i32::from(Os::MacOs));
+    assert_eq!(0, i32::from(Os::Windows));
 }
