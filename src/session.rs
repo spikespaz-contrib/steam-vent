@@ -246,7 +246,9 @@ async fn send_logon(
     debug!("waiting for login response");
     let raw_response = fut.await.map_err(|_| NetworkError::EOF)?;
     let (header, response) = raw_response.into_header_and_message::<CMsgClientLogonResponse>()?;
-    EResult::from_result(response.eresult()).map_err(LoginError::from)?;
+    EResult::from(response.eresult())
+        .into_result()
+        .map_err(LoginError::from)?;
 
     let assigned_steam_id = if response.has_client_supplied_steamid() {
         let raw = response.client_supplied_steamid();
