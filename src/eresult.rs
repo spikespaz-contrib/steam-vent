@@ -140,6 +140,23 @@ pub enum EResult {
     NoLauncherSpecified = 117,
     MustAgreeToSSA = 118,
     ClientNoLongerSupported = 119,
+    CurrentSteamRealmDoesNotMatch = 120,
+    /// Observed when logging on with a stored refresh or access token that Steam
+    /// no longer accepts. Unrelated to verifying a signature, despite the name.
+    ///
+    /// Arrives in the same situation as [`EResult::InvalidPassword`] and
+    /// [`EResult::AccessDenied`], and is not distinguished from them.
+    InvalidSignature = 121,
+    ParseFailure = 122,
+    NoVerifiedPhone = 123,
+    InsufficientBattery = 124,
+    ChargerRequired = 125,
+    CachedCredentialInvalid = 126,
+    PhoneNumberIsVOIP = 127,
+    NotSupported = 128,
+    FamilySizeLimitExceeded = 129,
+    OfflineAppCacheInvalid = 130,
+    TryLater = 131,
     /// A code with no name in this table; the payload is the code itself.
     ///
     /// Not one of Valve's variants. Its own discriminant is `i32::MIN`, outside
@@ -178,4 +195,18 @@ fn test_unknown_code_keeps_its_number() {
     assert_eq!(84, i32::from(EResult::RateLimitExceeded));
     assert_eq!(Ok(()), EResult::from(1).into_result());
     assert_eq!(Err(EResult::Invalid), EResult::from(0).into_result());
+}
+
+#[test]
+fn test_recent_codes_are_named() {
+    // Before the table reached them these arrived as `Unknown(n)`, which is
+    // accurate but not matchable; naming them is what lets callers dispatch.
+    assert!(matches!(
+        EResult::from(123).into_result(),
+        Err(EResult::NoVerifiedPhone)
+    ));
+    assert!(matches!(
+        EResult::from(131).into_result(),
+        Err(EResult::TryLater)
+    ));
 }
