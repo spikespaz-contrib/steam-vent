@@ -119,12 +119,12 @@ impl UnAuthenticatedConnection {
             }
         };
 
-        if let Some(guard_data) = tokens.new_guard_data
-            && let Err(e) = guard_data_store.store(account, guard_data).await
-        {
-            error!(error = ?e, "failed to store guard data");
-        } else {
-            debug!("no guard data received");
+        match tokens.new_guard_data {
+            Some(guard_data) => match guard_data_store.store(account, guard_data).await {
+                Ok(()) => debug!(account, "stored guard data"),
+                Err(e) => error!(error = ?e, "failed to store guard data"),
+            },
+            None => debug!("no guard data received"),
         }
 
         let session = login(
