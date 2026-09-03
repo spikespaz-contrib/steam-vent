@@ -113,7 +113,7 @@ impl UnAuthenticatedConnection {
             {
                 None
                 | Some(Err(ConnectionError::Network(NetworkError::ApiError(
-                    EResult::TwoFactorCodeMismatch,
+                    EResult::TwoFactorCodeMismatch | EResult::InvalidLoginAuthCode,
                 )))) => continue,
                 Some(result) => break result?,
             }
